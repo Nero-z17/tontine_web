@@ -1,0 +1,70 @@
+flowchart TD
+    classDef entity fill:#f8fafc,stroke:#1e3a8a,stroke-width:2px,color:#0f172a,text-align:left
+    classDef assoc fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46,rx:25,ry:25
+
+    %% ==========================================
+    %% ENTITES DU MCD FINAL (10 ENTITES)
+    %% ==========================================
+
+    USER["<b>UTILISATEUR</b><hr/><u>id_user</u><br/>code_public<br/>username<br/>password_hash<br/>nom_complet<br/>telephone<br/>email<br/>numero_cni<br/>role<br/>statut_membre<br/>canal_paiement<br/>telephone_paiement"]:::entity
+
+    TONTINE["<b>TONTINE</b><hr/><u>id_tontine</u><br/>code_tontine<br/>code_invitation<br/>nom<br/>ville<br/>solde_caisse_reserve<br/>statut<br/>date_debut_essai<br/>date_fin_essai<br/>statut_abonnement"]:::entity
+
+    CYCLE["<b>CYCLE</b><hr/><u>id_cycle</u><br/>numero_cycle<br/>titre<br/>montant_cotisation<br/>frequence<br/>jour_limite_paiement<br/>montant_penalite_retard<br/>date_debut<br/>date_fin<br/>statut<br/>date_tirage<br/>tirage_verrouille"]:::entity
+
+    PARTICIPATION["<b>PARTICIPATION_CYCLE</b><hr/><u>id_participation</u><br/>rang_beneficiaire<br/>montant_pot_attendu<br/>montant_pot_recu<br/>pot_totalement_recu<br/>date_reception_pot"]:::entity
+
+    COTISATION["<b>COTISATION</b><hr/><u>id_cotisation</u><br/>numero_seance<br/>date_echeance<br/>montant_attendu<br/>montant_paye<br/>statut"]:::entity
+
+    PAIEMENT["<b>PAIEMENT</b><hr/><u>id_paiement</u><br/>montant_total<br/>part_beneficiaire<br/>part_caisse_reserve<br/>mode_paiement<br/>reference_transaction<br/>date_paiement<br/>est_en_retard<br/>statut_paiement"]:::entity
+
+    PENALITE["<b>PENALITE_BONUS</b><hr/><u>id_penalite</u><br/>type_operation<br/>montant<br/>motif<br/>statut<br/>date_operation"]:::entity
+
+    REUNION["<b>REUNION</b><hr/><u>id_reunion</u><br/>titre<br/>date_heure<br/>lien_zoom<br/>description<br/>statut"]:::entity
+
+    ABONNEMENT["<b>ABONNEMENT</b><hr/><u>id_abonnement</u><br/>type_periode<br/>montant<br/>date_debut<br/>date_fin<br/>statut_paiement"]:::entity
+
+    TRANSFERT["<b>TRANSFERT_ADMIN</b><hr/><u>id_transfert</u><br/>ancien_reste_membre<br/>motif<br/>date_transfert"]:::entity
+
+    %% ==========================================
+    %% ASSOCIATIONS MERISE
+    %% ==========================================
+
+    A_DIRIGER(["<b>DIRIGER_ET_GERER_CAISSE</b>"]):::assoc
+    A_APPARTENIR(["<b>APPARTENIR</b>"]):::assoc
+    A_POSSEDER(["<b>POSSEDER</b>"]):::assoc
+    A_ORGANISER(["<b>ORGANISER</b>"]):::assoc
+    A_SOUSCRIRE(["<b>SOUSCRIRE</b>"]):::assoc
+    A_HISTORISER(["<b>HISTORISER</b>"]):::assoc
+    A_PASSER(["<b>TRANSMETTRE_ROLE</b>"]):::assoc
+
+    A_PARTICIPER(["<b>PARTICIPER</b>"]):::assoc
+    A_INCLURE(["<b>INCLURE</b>"]):::assoc
+
+    A_DEVOIR(["<b>DEVOIR_COTISER</b>"]):::assoc
+    A_BENEFICIER(["<b>ETRE_BOUFFEUR_SEANCE</b>"]):::assoc
+    A_REGLER(["<b>EFFECTUER_PAIEMENT</b>"]):::assoc
+    A_IMPUTER(["<b>IMPUTER_CAISSE</b>"]):::assoc
+
+    %% ==========================================
+    %% CARDINALITES MERISE
+    %% ==========================================
+
+    USER ---|"0,1"| A_DIRIGER ---|"1,1"| TONTINE
+    USER ---|"0,1"| A_APPARTENIR ---|"1,n"| TONTINE
+
+    TONTINE ---|"0,n"| A_POSSEDER ---|"1,1"| CYCLE
+    TONTINE ---|"0,n"| A_ORGANISER ---|"1,1"| REUNION
+    TONTINE ---|"0,n"| A_SOUSCRIRE ---|"1,1"| ABONNEMENT
+    TONTINE ---|"0,n"| A_HISTORISER ---|"1,1"| TRANSFERT
+    USER ---|"0,n"| A_PASSER ---|"1,1"| TRANSFERT
+
+    USER ---|"0,n"| A_PARTICIPER ---|"1,1"| PARTICIPATION
+    CYCLE ---|"1,n"| A_INCLURE ---|"1,1"| PARTICIPATION
+
+    PARTICIPATION ---|"1,n (membre payeur)"| A_DEVOIR ---|"1,1"| COTISATION
+    PARTICIPATION ---|"0,n (bouffeur de la seance)"| A_BENEFICIER ---|"1,1"| COTISATION
+
+    COTISATION ---|"0,n"| A_REGLER ---|"1,1"| PAIEMENT
+    PARTICIPATION ---|"0,n"| A_IMPUTER ---|"1,1"| PENALITE
+

@@ -1,0 +1,54 @@
+djangui/
+│
+├── database/
+│   └── djangui_complet.sql      # Notre base de données MySQL (les 10 tables restent identiques)
+│
+├── assets/                      # Le design et l'interactivité
+│   ├── css/
+│   │   └── style.css            # Couleurs Bleu nuit & Vert émeraude
+│   └── js/
+│       └── script.js            # Le JavaScript (calcul en direct, QR code, animation tirage)
+│
+├── includes/                    # Les 5 petits fichiers partagés par toutes les pages
+│   ├── db.php                   # Connexion MySQL en 12 lignes (crée la variable $pdo)
+│   ├── functions.php            # Nos fonctions simples (sécurité, partage du paiement, format FCFA)
+│   ├── header.php               # Le haut de page HTML + Bootstrap 5
+│   ├── navbar.php               # Le menu (s'adapte automatiquement : Public, Membre ou Admin)
+│   └── footer.php               # Le bas de page HTML + chargement de Bootstrap JS et script.js
+│
+├── admin/                       # Les pages de la Secrétaire / Administrateur
+│   ├── dashboard.php            # Tableau de bord Admin + solde caisse de réserve
+│   ├── tontine-info.php         # Infos de la tontine & arrêt définitif
+│   ├── members.php              # Ajouter / gérer les membres (avec CNI visible uniquement ici)
+│   ├── cycles.php               # Créer, activer et clôturer un cycle
+│   ├── draws.php                # Tirage au sort et ordre des bouffeurs
+│   ├── contributions.php        # Suivi des cotisations et des retards
+│   ├── penalties.php            # Caisse de réserve : pénalités et bonus
+│   ├── meetings.php             # Programmer les réunions Zoom
+│   ├── reports.php              # Bilans et historique des cycles
+│   ├── subscription.php         # Abonnement SaaS (2 mois gratuits puis 2 000 FCFA)
+│   ├── transfer.php             # Changer d'administrateur en fin de cycle
+│   └── settings.php             # Paramètres du compte
+│
+├── member/                      # Les pages du Membre (et de la Secrétaire quand elle cotise)
+│   ├── dashboard.php            # Tableau de bord personnel
+│   ├── tontine.php              # Infos de la tontine (sans CNI)
+│   ├── contributions.php        # Mes cotisations + Payer ma séance (MoMo / OM)
+│   ├── payments.php             # Historique de mes paiements (Part Bouffeur / Part Caisse)
+│   ├── draw-rank.php            # Mon rang de bouffeur et suivi de mon pot
+│   ├── calendar.php             # Calendrier des échéances
+│   ├── penalties.php            # Mes pénalités et bonus
+│   ├── meetings.php             # Voir les réunions et cliquer sur le lien Zoom
+│   ├── card.php                 # Ma carte de membre avec QR Code
+│   ├── notifications.php        # Mes alertes et rappels
+│   └── profile.php              # Modifier mon numéro MoMo/OM et mon mot de passe
+│
+└── (À la racine : Les pages publiques)
+    ├── index.php                # Accueil ("Créer une tontine" | "Accéder à ma tontine")
+    ├── register-tontine.php     # Créer une tontine
+    ├── join-tontine.php         # Rejoindre une tontine avec code d'invitation
+    ├── login.php                # Se connecter
+    ├── logout.php               # Se déconnecter
+    ├── forgot-password.php      # Mot de passe oublié
+    ├── pricing.php              # Tarifs (2 000 FCFA/mois après 2 mois d'essai)
+    └── about-terms.php          # Présentation et conditions d'utilisation

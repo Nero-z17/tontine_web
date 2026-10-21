@@ -1,0 +1,145 @@
+erDiagram
+    users ||--o| tontines : "1:1 dirige et gere la caisse (admin_id)"
+    tontines ||--|{ users : "1:N regroupe (tontine_id)"
+
+    tontines ||--o{ cycles : "1:N possede"
+    tontines ||--o{ meetings : "1:N organise"
+    tontines ||--o{ subscriptions : "1:N souscrit"
+    tontines ||--o{ admin_transfers : "1:N historise"
+
+    cycles ||--|{ cycle_members : "1:N inclut"
+    users ||--o{ cycle_members : "1:N participe"
+
+    cycle_members ||--|{ contributions : "1:N doit payer (cycle_member_id)"
+    cycle_members ||--o{ contributions : "1:N est bouffeur de la seance (beneficiaire_id)"
+    cycle_members ||--o{ penalties : "1:N recoit penalite/bonus (caisse)"
+
+    contributions ||--o{ payments : "1:N est reglee par"
+    users ||--o{ payments : "1:N paie depuis son espace (paye_par_user_id)"
+
+    tontines {
+        int id PK
+        varchar code_tontine "UNIQUE"
+        varchar code_invitation "UNIQUE"
+        varchar nom
+        varchar ville
+        decimal solde_caisse_reserve "Geree par l admin (penalites et reliquats)"
+        enum statut "active, suspendue, fermee"
+        datetime date_debut_essai
+        datetime date_fin_essai
+        enum statut_abonnement "essai, actif, expire"
+        int admin_id FK "UNIQUE"
+    }
+
+    users {
+        int id PK
+        varchar code_public "UNIQUE - QR Code"
+        varchar username "UNIQUE"
+        varchar password_hash
+        varchar nom_complet
+        varchar telephone "UNIQUE"
+        varchar email "UNIQUE"
+        varchar numero_cni "Confidentiel"
+        enum role "admin, member"
+        enum statut_membre "actif, inactif, sorti"
+        enum canal_paiement "momo, om, especes"
+        varchar telephone_paiement "Compte qui recoit le pot (bouffeur) ou la caisse (admin)"
+        int tontine_id FK
+    }
+
+    cycles {
+        int id PK
+        int numero_cycle
+        varchar titre
+        decimal montant_cotisation
+        enum frequence "hebdo, bimensuel, mensuel"
+        int jour_limite_paiement
+        decimal montant_penalite_retard
+        date date_debut
+        date date_fin
+        enum statut "brouillon, actif, termine, annule"
+        datetime date_tirage
+        tinyint tirage_verrouille
+        int tontine_id FK
+        int auteur_tirage_id FK
+    }
+
+    cycle_members {
+        int id PK
+        int rang_beneficiaire "Ordre du tirage (1, 2, 3...)"
+        decimal montant_pot_attendu "Ex: 250000 FCFA"
+        decimal montant_pot_recu "Cumul reel recu par ce bouffeur"
+        tinyint pot_totalement_recu "1 quand montant_pot_recu = attendu"
+        datetime date_reception_pot
+        int cycle_id FK
+        int user_id FK
+    }
+
+    contributions {
+        int id PK
+        int numero_seance
+        date date_echeance
+        decimal montant_attendu
+        decimal montant_paye
+        enum statut "en_attente, partiel, paye, en_retard"
+        int cycle_member_id FK "Membre qui doit cotiser"
+        int beneficiaire_cycle_member_id FK "Bouffeur de cette seance"
+    }
+
+    payments {
+        int id PK
+        decimal montant_total "Montant total paye par le membre"
+        decimal part_beneficiaire "Va au bouffeur (ou ancien bouffeur) de la seance"
+        decimal part_caisse_reserve "Va au compte Admin (caisse de reserve)"
+        enum mode_paiement "momo, om, especes"
+        varchar reference_paiement
+        datetime date_paiement
+        tinyint est_en_retard
+        enum statut_paiement "valide, en_attente, rejete"
+        int contribution_id FK
+        int paye_par_user_id FK "Membre qui a paye dans son espace"
+    }
+
+    penalties {
+        int id PK
+        enum type_operation "penalite, bonus"
+        decimal montant "Va dans la caisse de reserve de l admin"
+        varchar motif
+        enum statut "en_attente, regle, annule"
+        datetime date_operation
+        int cycle_member_id FK
+        int auteur_id FK
+    }
+
+    meetings {
+        int id PK
+        varchar titre
+        datetime date_heure
+        varchar lien_zoom
+        text description
+        enum statut "brouillon, publiee, terminee, annulee"
+        int tontine_id FK
+        int cree_par_id FK
+    }
+
+    subscriptions {
+        int id PK
+        enum type_periode "essai, mensuel"
+        decimal montant
+        datetime date_debut
+        datetime date_fin
+        enum statut_paiement "essai, paye, en_attente, simule"
+        int tontine_id FK
+        int paye_par_id FK
+    }
+
+    admin_transfers {
+        int id PK
+        tinyint ancien_reste_membre
+        varchar motif
+        datetime date_transfert
+        int tontine_id FK
+        int cycle_id FK
+        int ancien_admin_id FK
+        int nouvel_admin_id FK
+    }
