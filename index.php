@@ -30,7 +30,7 @@ require_once 'includes/navbar.php';
                 </div>
 
                 <h1 class="hero-title mb-4">
-                    Votre tontine gérée avec <span class="text-gradient-blue">élégance, rigueur et transparence.</span>
+                    Votre tontine gérée avec <span class="text-gradient-blue">élégance, rigueur et <span class="mot-accent">transparence.</span></span>
                 </h1>
 
                 <p class="hero-subtitle mb-4 mx-auto" style="max-width: 620px;">
