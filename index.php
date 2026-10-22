@@ -20,10 +20,10 @@ require_once 'includes/navbar.php';
     <div class="hero-overlay"></div>
 
     <div class="container hero-content py-3 py-lg-5">
-        <div class="row align-items-center g-5">
+        <div class="row align-items-center justify-content-center g-5">
             
             <!-- COLONNE GAUCHE : Titre, explications et parcours d'accès -->
-            <div class="col-lg-7 text-center text-lg-start">
+            <div class="col-lg-8 text-center col-xl-7">
                 <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill mb-4 hero-badge">
                     <span class="badge bg-success rounded-pill px-2 py-1">OFFRE CAMEROUN</span>
                     <span class="small fw-semibold">2 mois d'essai gratuits pour toute votre tontine</span>
@@ -33,12 +33,12 @@ require_once 'includes/navbar.php';
                     Votre tontine gérée avec <span class="text-gradient-blue">élégance, rigueur et transparence.</span>
                 </h1>
 
-                <p class="hero-subtitle mb-4 mx-auto mx-lg-0" style="max-width: 620px;">
+                <p class="hero-subtitle mb-4 mx-auto" style="max-width: 620px;">
                     Fini les litiges de cahier. Chaque membre cotise depuis son téléphone : la part du tour va directement au <strong>bénéficiaire (« bouffeur »)</strong>, les dettes remboursées reviennent à l'ancien bénéficiaire concerné, et les pénalités alimentent la <strong>caisse de réserve</strong>.
                 </p>
 
                 <!-- LES 2 PARCOURS PRINCIPAUX -->
-                <div class="d-flex flex-column flex-sm-row justify-content-center justify-content-lg-start gap-3 mb-4">
+                <div class="d-flex flex-column flex-sm-row justify-content-center gap-3 mb-4">
                     <a href="<?= BASE_URL ?>/register-tontine.php" class="btn btn-glow-emerald btn-lg px-4 py-3">
                         <i class="bi bi-plus-circle-fill me-2"></i>Créer une tontine
                     </a>
@@ -56,79 +56,6 @@ require_once 'includes/navbar.php';
                     </a>
                 </div>
             </div>
-
-            <!-- COLONNE DROITE : Maquette interactive du téléphone (Blanche/Argent en Mode Clair, Nuit en Mode Sombre) -->
-            <div class="col-lg-5 d-flex justify-content-center">
-                <div class="phone-mockup hover-lift">
-                    <div class="phone-notch"></div>
-                    <div class="phone-screen">
-                        <!-- En-tête de l'écran du téléphone -->
-                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
-                            <div class="d-flex align-items-center gap-2">
-                                <i class="bi bi-safe2-fill text-primary fs-5"></i>
-                                <span class="fw-bold small">Djangui Solidarité Akwa</span>
-                            </div>
-                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill" style="font-size: 0.7rem;">
-                                Cycle 2 Actif
-                            </span>
-                        </div>
-
-                        <!-- Carte du Bouffeur du tour (Dégradé Bleu Roi -> Émeraude lumineux) -->
-                        <div class="phone-pot-card mb-3">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <span class="small fw-semibold text-white" style="font-size: 0.75rem;">🎯 BÉNÉFICIAIRE DU TOUR</span>
-                                <span class="badge bg-light text-primary fw-bold" style="font-size: 0.68rem;">Rang #2</span>
-                            </div>
-                            <div class="fw-bold text-white fs-6">Marie-Claire Ngono</div>
-                            <div class="d-flex justify-content-between align-items-end mt-2">
-                                <div class="small text-white opacity-75" style="font-size: 0.75rem;">Pot attendu : <strong>250 000 FCFA</strong></div>
-                                <div class="fw-bold small text-white">200 000 FCFA reçus</div>
-                            </div>
-                            <div class="progress mt-2" style="height: 6px; background: rgba(255,255,255,0.25);">
-                                <div class="progress-bar bg-white" style="width: 80%"></div>
-                            </div>
-                        </div>
-
-                        <!-- Simulation de ventilation automatique d'un paiement -->
-                        <div class="small text-muted fw-bold mb-2" style="font-size: 0.72rem; letter-spacing: 0.04em;">
-                            DERNIÈRE OPÉRATION ENREGISTRÉE
-                        </div>
-
-                        <div class="phone-tx-card mb-2">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="fw-bold small"><i class="bi bi-check-circle-fill text-success me-1"></i>Paul Kamga (MoMo)</span>
-                                <span class="fw-bold small text-primary">32 500 FCFA</span>
-                            </div>
-                            <hr class="my-2 opacity-25">
-                            <div class="d-flex justify-content-between small" style="font-size: 0.75rem;">
-                                <span class="text-muted"><i class="bi bi-arrow-return-right text-primary me-1"></i>Versé au Bouffeur :</span>
-                                <span class="text-primary fw-bold">30 000 FCFA</span>
-                            </div>
-                            <div class="d-flex justify-content-between small mt-1" style="font-size: 0.75rem;">
-                                <span class="text-muted"><i class="bi bi-arrow-return-right text-success me-1"></i>Caisse (Pénalité) :</span>
-                                <span class="text-success fw-bold">2 500 FCFA</span>
-                            </div>
-                        </div>
-
-                        <!-- Solde Caisse de réserve & QR Code -->
-                        <div class="row g-2 mt-2">
-                            <div class="col-7">
-                                <div class="p-2 rounded-3 h-100 d-flex flex-column justify-content-center box-adaptive">
-                                    <span class="text-muted" style="font-size: 0.68rem;">🏦 Caisse de Réserve</span>
-                                    <span class="fw-bold text-primary small">7 500 FCFA</span>
-                                </div>
-                            </div>
-                            <div class="col-5">
-                                <div class="p-2 rounded-3 h-100 d-flex align-items-center justify-content-center gap-1 box-adaptive">
-                                    <i class="bi bi-qr-code fs-5 text-success"></i>
-                                    <span style="font-size: 0.7rem;" class="fw-bold">Carte QR</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
         </div>
     </div>
 </main>
