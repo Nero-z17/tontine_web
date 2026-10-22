@@ -11,7 +11,8 @@ try {
                     dbname=$dbname;
                     charset=utf8mb4",
                     $username_db,
-                    $password_db);
+                    $password_db
+                );
     
     // Affiche clairement les erreurs SQL si on se trompe dans une requête
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

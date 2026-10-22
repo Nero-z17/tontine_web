@@ -1,0 +1,504 @@
+/* ==========================================================================
+   DJANGUI DESIGN SYSTEM — Bi-Thème (Mode Clair Lumineux & Mode Sombre Bleu Nuit)
+   ========================================================================== */
+
+/* 1. THÈME CLAIR (Par défaut : Dégradés doux Blanc, Bleu Azur & Vert Émeraude) */
+:root,
+[data-theme="light"] {
+    --dj-bg-body: #f4f8fb;
+    --dj-bg-body-gradient: linear-gradient(180deg, #eef6ff 0%, #f8fafc 45%, #f0fdf4 100%);
+    --dj-bg-card: #ffffff;
+    --dj-bg-section-alt: linear-gradient(135deg, #ffffff 0%, #f0f7ff 60%, #ecfdf5 100%);
+    --dj-bg-box: #f1f5f9;
+    --dj-text-main: #0f172a;
+    --dj-text-muted: #475569;
+    --dj-border-color: rgba(37, 99, 235, 0.16);
+    
+    /* Navbar Mode Clair : Verre blanc nacré & reflets bleu/émeraude */
+    --dj-navbar-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(239, 246, 255, 0.96) 55%, rgba(236, 253, 245, 0.96) 100%);
+    --dj-navbar-border: rgba(37, 99, 235, 0.18);
+    --dj-navbar-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+    --dj-nav-link: #1e293b;
+    --dj-nav-link-hover-bg: rgba(37, 99, 235, 0.10);
+    --dj-nav-link-active: #2563eb;
+    --dj-brand-text: #0f172a;
+
+    /* Hero Vidéo Mode Clair : Voile lumineux dégradé Bleu Ciel & Émeraude pastel */
+    --dj-hero-overlay: linear-gradient(125deg, rgba(255, 255, 255, 0.93) 0%, rgba(224, 242, 254, 0.88) 52%, rgba(209, 250, 229, 0.84) 100%);
+    --dj-hero-title: #0f172a;
+    --dj-hero-subtitle: #1e293b;
+    --dj-hero-shadow: 0 2px 10px rgba(255, 255, 255, 0.8);
+    --dj-hero-badge-bg: rgba(37, 99, 235, 0.10);
+    --dj-hero-badge-border: rgba(37, 99, 235, 0.30);
+    --dj-hero-invite-bg: rgba(255, 255, 255, 0.88);
+    --dj-hero-invite-border: rgba(37, 99, 235, 0.25);
+
+    /* Téléphone interactif en Mode Clair */
+    --dj-phone-frame: linear-gradient(145deg, #ffffff 0%, #e2e8f0 100%);
+    --dj-phone-border: #cbd5e1;
+    --dj-phone-screen: #f8fafc;
+    --dj-phone-tx-bg: #ffffff;
+    --dj-phone-pot-bg: linear-gradient(135deg, #2563eb 0%, #0284c7 60%, #059669 100%);
+
+    /* Cartes d'accentuation & Bannières (Beau fondu clair au lieu du noir) */
+    --dj-accent-card-bg: linear-gradient(135deg, #e0f2fe 0%, #eff6ff 50%, #d1fae5 100%);
+    --dj-accent-card-border: rgba(37, 99, 235, 0.28);
+    --dj-accent-card-text: #0f172a;
+    --dj-accent-subbox-bg: rgba(255, 255, 255, 0.85);
+
+    /* Ombres et couleurs principales */
+    --dj-card-shadow: 0 10px 28px -6px rgba(37, 99, 235, 0.08), 0 4px 12px -3px rgba(15, 23, 42, 0.04);
+    --dj-hover-shadow: 0 20px 38px -8px rgba(37, 99, 235, 0.22);
+    --dj-table-head-bg: linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%);
+    --dj-table-head-text: #ffffff;
+    --dj-blue: #2563eb;
+    --dj-emerald: #059669;
+}
+
+/* 2. THÈME SOMBRE (Bleu Nuit profond #070b19, Gris Ardoise & Halo Bleu) */
+[data-theme="dark"] {
+    --dj-bg-body: #070b19;
+    --dj-bg-body-gradient: linear-gradient(180deg, #070b19 0%, #0f172a 60%, #091326 100%);
+    --dj-bg-card: #111827;
+    --dj-bg-section-alt: linear-gradient(135deg, #0b1120 0%, #0f172a 60%, #111827 100%);
+    --dj-bg-box: #1e293b;
+    --dj-text-main: #f8fafc;
+    --dj-text-muted: #94a3b8;
+    --dj-border-color: rgba(59, 130, 246, 0.25);
+
+    /* Navbar Mode Sombre */
+    --dj-navbar-bg: linear-gradient(135deg, rgba(7, 11, 25, 0.95) 0%, rgba(15, 23, 42, 0.95) 60%, rgba(30, 58, 138, 0.92) 100%);
+    --dj-navbar-border: rgba(59, 130, 246, 0.28);
+    --dj-navbar-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    --dj-nav-link: #e2e8f0;
+    --dj-nav-link-hover-bg: rgba(59, 130, 246, 0.22);
+    --dj-nav-link-active: #38bdf8;
+    --dj-brand-text: #ffffff;
+
+    /* Hero Vidéo Mode Sombre */
+    --dj-hero-overlay: linear-gradient(125deg, rgba(7, 11, 25, 0.92) 0%, rgba(15, 23, 42, 0.84) 55%, rgba(30, 58, 138, 0.72) 100%);
+    --dj-hero-title: #ffffff;
+    --dj-hero-subtitle: #e2e8f0;
+    --dj-hero-shadow: 0 6px 24px rgba(0, 0, 0, 0.65);
+    --dj-hero-badge-bg: rgba(37, 99, 235, 0.28);
+    --dj-hero-badge-border: rgba(96, 165, 250, 0.50);
+    --dj-hero-invite-bg: rgba(15, 23, 42, 0.78);
+    --dj-hero-invite-border: rgba(255, 255, 255, 0.22);
+
+    /* Téléphone interactif en Mode Sombre */
+    --dj-phone-frame: #070b19;
+    --dj-phone-border: #1e293b;
+    --dj-phone-screen: #0f172a;
+    --dj-phone-tx-bg: rgba(255, 255, 255, 0.05);
+    --dj-phone-pot-bg: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+
+    /* Cartes d'accentuation & Bannières en Mode Sombre */
+    --dj-accent-card-bg: linear-gradient(145deg, #0f172a 0%, #1e293b 60%, #1e3a8a 100%);
+    --dj-accent-card-border: rgba(59, 130, 246, 0.35);
+    --dj-accent-card-text: #ffffff;
+    --dj-accent-subbox-bg: rgba(255, 255, 255, 0.07);
+
+    /* Ombres et couleurs principales */
+    --dj-card-shadow: 0 18px 38px -10px rgba(0, 0, 0, 0.65);
+    --dj-hover-shadow: 0 20px 42px -6px rgba(59, 130, 246, 0.38);
+    --dj-table-head-bg: #1e293b;
+    --dj-table-head-text: #60a5fa;
+    --dj-blue: #3b82f6;
+    --dj-emerald: #10b981;
+}
+
+/* ==========================================================================
+   BASE & CORPS DE PAGE
+   ========================================================================== */
+body {
+    background: var(--dj-bg-body-gradient);
+    background-color: var(--dj-bg-body);
+    color: var(--dj-text-main);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.3s ease, color 0.25s ease;
+    overflow-x: hidden;
+}
+
+.text-muted {
+    color: var(--dj-text-muted) !important;
+}
+
+.text-adaptive {
+    color: var(--dj-text-main) !important;
+}
+
+@media (max-width: 991.98px) {
+    body {
+        padding-bottom: 74px;
+    }
+}
+
+/* ==========================================================================
+   1. BARRE DE NAVIGATION ADAPTATIVE (CLAIR & SOMBRE)
+   ========================================================================== */
+.navbar-djangui {
+    background: var(--dj-navbar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--dj-navbar-border);
+    box-shadow: var(--dj-navbar-shadow);
+    transition: all 0.3s ease;
+}
+
+.navbar-djangui .navbar-brand {
+    color: var(--dj-brand-text) !important;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.navbar-djangui .nav-link {
+    color: var(--dj-nav-link) !important;
+    font-weight: 600;
+    padding: 0.5rem 0.85rem !important;
+    border-radius: 0.6rem;
+    transition: all 0.2s ease;
+}
+
+.navbar-djangui .nav-link:hover,
+.navbar-djangui .nav-link.active {
+    color: var(--dj-nav-link-active) !important;
+    background: var(--dj-nav-link-hover-bg);
+    transform: translateY(-1px);
+}
+
+/* Bouton de bascule Mode Clair / Mode Sombre */
+.btn-theme-toggle {
+    background: var(--dj-nav-link-hover-bg);
+    border: 1px solid var(--dj-border-color);
+    color: var(--dj-text-main) !important;
+    border-radius: 2rem;
+    padding: 0.38rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    transition: all 0.25s ease;
+}
+
+.btn-theme-toggle:hover {
+    border-color: var(--dj-blue);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+}
+
+/* Bouton Déconnexion adaptatif */
+.btn-logout-djangui {
+    background: rgba(239, 68, 68, 0.10);
+    border: 1px solid rgba(239, 68, 68, 0.30);
+    color: #ef4444 !important;
+    border-radius: 0.6rem;
+    transition: all 0.2s ease;
+}
+
+.btn-logout-djangui:hover {
+    background: #ef4444;
+    color: #ffffff !important;
+}
+
+/* ==========================================================================
+   2. HERO VIDÉO D'ACCUEIL (AVEC FONDU CLAIR OU SOMBRE AUTOMATIQUE)
+   ========================================================================== */
+.hero-video-section {
+    position: relative;
+    min-height: 86vh;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    background-color: var(--dj-bg-body);
+    background-image: url('https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=1600&q=80');
+    background-size: cover;
+    background-position: center;
+    color: var(--dj-hero-title);
+    padding: 4rem 0;
+}
+
+.hero-video-bg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    min-width: 100%;
+    min-height: 100%;
+    width: auto;
+    height: auto;
+    transform: translate(-50%, -50%);
+    object-fit: cover;
+    z-index: 1;
+}
+
+.hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--dj-hero-overlay);
+    backdrop-filter: blur(2px);
+    z-index: 2;
+    transition: background 0.35s ease;
+}
+
+.hero-content {
+    position: relative;
+    z-index: 3;
+}
+
+.hero-title {
+    font-size: clamp(2.1rem, 4.4vw, 3.4rem);
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--dj-hero-title);
+    text-shadow: var(--dj-hero-shadow);
+}
+
+.text-gradient-blue {
+    background: linear-gradient(90deg, #2563eb 0%, #0ea5e9 50%, #059669 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+[data-theme="dark"] .text-gradient-blue {
+    background: linear-gradient(90deg, #60a5fa 0%, #38bdf8 50%, #34d399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-subtitle {
+    font-size: clamp(1.05rem, 1.8vw, 1.2rem);
+    color: var(--dj-hero-subtitle);
+    line-height: 1.65;
+    font-weight: 500;
+}
+
+.hero-badge {
+    background: var(--dj-hero-badge-bg);
+    border: 1px solid var(--dj-hero-badge-border);
+    color: var(--dj-hero-title);
+    backdrop-filter: blur(8px);
+}
+
+.hero-invite-box {
+    background: var(--dj-hero-invite-bg);
+    border: 1px solid var(--dj-hero-invite-border);
+    color: var(--dj-hero-title);
+    box-shadow: var(--dj-card-shadow);
+    backdrop-filter: blur(12px);
+}
+
+/* ==========================================================================
+   3. MAQUETTE DE TÉLÉPHONE INTERACTIVE (CLAIR & SOMBRE)
+   ========================================================================== */
+.phone-mockup {
+    width: 100%;
+    max-width: 365px;
+    background: var(--dj-phone-frame);
+    border: 6px solid var(--dj-phone-border);
+    border-radius: 2.2rem;
+    padding: 1.1rem;
+    box-shadow: var(--dj-card-shadow), 0 0 0 1px var(--dj-border-color);
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.phone-notch {
+    width: 110px;
+    height: 16px;
+    background: var(--dj-phone-border);
+    border-radius: 0 0 1rem 1rem;
+    margin: -1.1rem auto 0.9rem auto;
+}
+
+.phone-screen {
+    background: var(--dj-phone-screen);
+    color: var(--dj-text-main);
+    border-radius: 1.5rem;
+    padding: 1rem;
+    border: 1px solid var(--dj-border-color);
+}
+
+/* Carte du Bouffeur dans le téléphone : Toujours un beau dégradé Bleu Roi -> Émeraude */
+.phone-pot-card {
+    background: var(--dj-phone-pot-bg);
+    color: #ffffff;
+    border-radius: 0.9rem;
+    padding: 0.95rem;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+}
+
+.phone-tx-card {
+    background: var(--dj-phone-tx-bg);
+    border: 1px solid var(--dj-border-color);
+    padding: 0.75rem;
+    border-radius: 0.85rem;
+}
+
+/* ==========================================================================
+   4. CARTES, BANNIÈRES & EFFETS HOVER (100% ADAPTATIFS)
+   ========================================================================== */
+.card-djangui {
+    background-color: var(--dj-bg-card);
+    color: var(--dj-text-main);
+    border: 1px solid var(--dj-border-color);
+    border-radius: 1rem;
+    box-shadow: var(--dj-card-shadow);
+    transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease, background-color 0.25s ease;
+}
+
+/* Carte vedette / Bannière SaaS : Fondu Azur-Émeraude en Mode Clair, Bleu Nuit en Mode Sombre */
+.card-dark-djangui,
+.card-accent-djangui {
+    background: var(--dj-accent-card-bg);
+    color: var(--dj-accent-card-text);
+    border: 1px solid var(--dj-accent-card-border);
+    border-radius: 1.15rem;
+    box-shadow: var(--dj-card-shadow);
+    transition: all 0.28s ease;
+}
+
+/* Sécurité : Si une page utilise text-white dans card-dark-djangui ou page-header-dark, il devient lisible en Mode Clair */
+[data-theme="light"] .card-dark-djangui .text-white,
+[data-theme="light"] .card-dark-djangui .text-light,
+[data-theme="light"] .page-header-dark .text-white,
+[data-theme="light"] .page-header-dark .text-light {
+    color: #0f172a !important;
+}
+
+[data-theme="light"] .card-dark-djangui .text-white-50,
+[data-theme="light"] .page-header-dark .text-white-50 {
+    color: #475569 !important;
+}
+
+.accent-subbox {
+    background: var(--dj-accent-subbox-bg);
+    border: 1px solid var(--dj-accent-card-border);
+}
+
+.hover-lift:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--dj-hover-shadow);
+    border-color: var(--dj-blue) !important;
+}
+
+.border-left-navy    { border-left: 5px solid var(--dj-blue) !important; }
+.border-left-emerald { border-left: 5px solid var(--dj-emerald) !important; }
+.border-left-warning { border-left: 5px solid #f59e0b !important; }
+.border-left-danger  { border-left: 5px solid #ef4444 !important; }
+
+/* Bandeau d'en-tête des pages intérieures : Fondu clair en Mode Clair, Bleu Nuit en Mode Sombre */
+.page-header-dark {
+    background: var(--dj-accent-card-bg);
+    color: var(--dj-accent-card-text);
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--dj-accent-card-border);
+}
+
+.section-surface {
+    background: var(--dj-bg-section-alt);
+    border-color: var(--dj-border-color) !important;
+}
+
+.box-adaptive {
+    background-color: var(--dj-bg-box);
+    border: 1px solid var(--dj-border-color);
+}
+
+/* ==========================================================================
+   5. BOUTONS LUMINEUX
+   ========================================================================== */
+.btn-glow-blue, .btn-navy {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    border: none;
+    color: #ffffff !important;
+    font-weight: 600;
+    border-radius: 0.65rem;
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.30);
+    transition: all 0.25s ease;
+}
+
+.btn-glow-blue:hover, .btn-navy:hover {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.50);
+}
+
+.btn-glow-emerald, .btn-emerald {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    color: #ffffff !important;
+    font-weight: 600;
+    border-radius: 0.65rem;
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.30);
+    transition: all 0.25s ease;
+}
+
+.btn-glow-emerald:hover, .btn-emerald:hover {
+    background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(16, 185, 129, 0.50);
+}
+
+/* ==========================================================================
+   6. TABLEAUX, FOOTER & BARRE MOBILE DU BAS
+   ========================================================================== */
+.table-djangui thead th {
+    background: var(--dj-table-head-bg);
+    color: var(--dj-table-head-text);
+    font-weight: 600;
+    border: none;
+    padding: 0.9rem 1rem;
+}
+
+.footer-djangui {
+    background: var(--dj-navbar-bg);
+    border-top: 1px solid var(--dj-border-color);
+    color: var(--dj-text-muted);
+}
+
+.mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 66px;
+    background: var(--dj-navbar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--dj-navbar-border);
+    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.08);
+    z-index: 1030;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+}
+
+.mobile-bottom-nav a {
+    color: var(--dj-text-muted);
+    text-decoration: none;
+    font-size: 0.74rem;
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    height: 100%;
+    transition: all 0.2s ease;
+}
+
+.mobile-bottom-nav a i {
+    font-size: 1.25rem;
+    margin-bottom: 2px;
+}
+
+.mobile-bottom-nav a.active,
+.mobile-bottom-nav a:hover {
+    color: var(--dj-nav-link-active);
+    transform: translateY(-2px);
+}
