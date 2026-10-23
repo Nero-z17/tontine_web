@@ -60,8 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtUser = $pdo->prepare("
                     INSERT INTO users (
                         code_public, username, password_hash, nom_complet, telephone, email,
-                        numero_cni, role, statut_membre, canal_paiement, telephone_paiement, doit_changer_mdp
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'admin', 'actif', ?, ?, 0)
+                        numero_cni, role, statut_membre, canal_paiement, telephone_paiement
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'admin', 'actif', ?, ?)
                 ");
                 $stmtUser->execute([
                     $code_public,

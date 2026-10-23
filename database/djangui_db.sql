@@ -26,7 +26,6 @@ CREATE TABLE users (
     statut_membre ENUM('actif', 'inactif', 'sorti') NOT NULL DEFAULT 'actif',
     canal_paiement ENUM('momo', 'om', 'especes') NOT NULL DEFAULT 'momo',
     telephone_paiement VARCHAR(20) NOT NULL COMMENT 'Numero MoMo/OM qui envoie les cotisations et recoit le pot',
-    doit_changer_mdp TINYINT(1) NOT NULL DEFAULT 1,
     tentatives_echouees TINYINT UNSIGNED NOT NULL DEFAULT 0,
     blocage_jusqua DATETIME DEFAULT NULL,
     reset_token VARCHAR(100) DEFAULT NULL,
