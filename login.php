@@ -63,13 +63,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['role']        = $user['role'];
             $_SESSION['tontine_id']  = (int)$user['tontine_id'];
 
-            // Changement obligatoire du mot de passe si le compte vient d'être créé par la secrétaire
-            if ((int)$user['doit_changer_mdp'] === 1) {
-                message_flash('warning', 'Bienvenue sur Djangui ! Veuillez personnaliser votre mot de passe initial.');
-                header('Location: ' . BASE_URL . '/member/profile.php');
-                exit;
-            }
-
             message_flash('success', 'Heureux de vous revoir, ' . $user['nom_complet'] . ' !');
             if ($user['role'] === 'admin') {
                 header('Location: ' . BASE_URL . '/admin/dashboard.php');

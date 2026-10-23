@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $canal_paiement     = $_POST['canal_paiement'] ?? 'momo';
     $telephone_paiement = trim($_POST['telephone_paiement'] ?? $telephone);
     $mot_de_passe       = $_POST['mot_de_passe'] ?? '';
+    $numero_cni = trim($_POST['numero_cni'] ?? '');
 
     if ($code_invitation === '' || $nom_complet === '' || $username === '' || $telephone === '' || $mot_de_passe === '') {
         $erreur = "Veuillez remplir tous les champs obligatoires (*).";
@@ -54,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INSERT INTO users (
                         code_public, username, password_hash, nom_complet, telephone, email,
                         role, statut_membre, canal_paiement, telephone_paiement, doit_changer_mdp, tontine_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'member', 'actif', ?, ?, 0, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'member', 'actif', ?, ?, 0, ?, ?)
                 ");
                 $stmtInsert->execute([
                     $code_public,
@@ -65,7 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $email !== '' ? $email : null,
                     $canal_paiement,
                     $telephone_paiement !== '' ? $telephone_paiement : $telephone,
-                    (int)$tontine['id']
+                    (int)$tontine['id'],
+                    $numero_cni
                 ]);
 
                 $new_user_id = (int)$pdo->lastInsertId();
@@ -169,6 +171,13 @@ require_once __DIR__ . '/includes/navbar.php';
                             <input type="text" name="telephone_paiement" class="form-control"
                                    placeholder="Identique au téléphone si vide"
                                    value="<?= e($_POST['telephone_paiement'] ?? '') ?>">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold small">Numéro de CNI (confidentiel, visible uniquement par l'admin) *</label>
+                            <input type="text" name="numero_cni" class="form-control"
+                                placeholder="Ex: CNI-LT-102938475"
+                                value="<?= e($_POST['numero_cni'] ?? '') ?>" required>
                         </div>
 
                         <div class="col-12">
