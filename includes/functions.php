@@ -6,7 +6,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Adresse de base du projet dans XAMPP
-define('BASE_URL', 'http://' . $_SERVER['HTTP_HOST'] . '/djangui');
+define('BASE_URL', 'http://' . $_SERVER['HTTP_HOST'] . '/membre_tontine');
 
 // 1. Protéger l'affichage HTML contre les failles XSS
 function e($texte) {
