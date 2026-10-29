@@ -181,7 +181,7 @@ require_once __DIR__ . '/includes/navbar.php';
                                 value="<?= e($_POST['numero_cni'] ?? '') ?>" required>
                         </div>
 
-                        <div class="col-12">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold small">Choisissez votre mot de passe (min. 6 caractères) *</label>
                             <input type="password" name="mot_de_passe" class="form-control" required>
                         </div>
@@ -193,7 +193,7 @@ require_once __DIR__ . '/includes/navbar.php';
                 </form>
 
                 <div class="text-center mt-3 small text-muted">
-                    Votre secrétaire a déjà créé votre compte ?
+                    Votre adhésion a déjà été validée par la secrétaire ?
                     <a href="<?= BASE_URL ?>/login.php" class="fw-bold text-primary text-decoration-none">Connectez-vous ici</a>
                 </div>
             </div>

@@ -6,9 +6,6 @@ $titre_page = 'Demande en attente';
 require_once __DIR__ . '/header.php';
 require_once __DIR__ . '/navbar.php';
 
-$flash_texte = $_SESSION['flash_texte'] ?? '';
-$flash_type = $_SESSION['flash_type'] ?? 'info';
-unset($_SESSION['flash_texte'], $_SESSION['flash_type']);
 ?>
 
 <main class="container py-5">

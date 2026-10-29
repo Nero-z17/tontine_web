@@ -54,11 +54,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd = $pdo->prepare("UPDATE users SET tentatives_echouees = 0, blocage_jusqua = NULL WHERE id = ?");
             $upd->execute([$user['id']]);
 
-            if ($user['statut_validation'] !== 'accepte') {
+            if (($user['statut_validation'] ?? 'accepte') === 'refuse') {
+                $erreur = "Votre demande d'adhésion à cette tontine a été refusée par l'administrateur.";
+            } elseif (($user['statut_validation'] ?? 'accepte') !== 'accepte') {
                 message_flash('info', 'Votre demande d’adhésion est toujours en attente de validation par l’administrateur.');
                 header('Location: ' . BASE_URL . '/includes/waiting.php');
                 exit;
-            }
+            } else {
 
             session_regenerate_id(true);
 
@@ -75,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 header('Location: ' . BASE_URL . '/member/dashboard.php');
             }
-            exit;
+            exit;}
         }
     }
 }
