@@ -24,6 +24,7 @@ CREATE TABLE users (
     numero_cni VARCHAR(60) DEFAULT NULL COMMENT 'Donnee sensible visible uniquement par l admin',
     role ENUM('admin', 'member') NOT NULL DEFAULT 'member',
     statut_membre ENUM('actif', 'inactif', 'sorti') NOT NULL DEFAULT 'actif',
+    statut_validation ENUM('en_attente', 'accepte') NOT NULL DEFAULT 'accepte',
     canal_paiement ENUM('momo', 'om', 'especes') NOT NULL DEFAULT 'momo',
     telephone_paiement VARCHAR(20) NOT NULL COMMENT 'Numero MoMo/OM qui envoie les cotisations et recoit le pot',
     tentatives_echouees TINYINT UNSIGNED NOT NULL DEFAULT 0,

@@ -54,6 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd = $pdo->prepare("UPDATE users SET tentatives_echouees = 0, blocage_jusqua = NULL WHERE id = ?");
             $upd->execute([$user['id']]);
 
+            if ($user['statut_validation'] !== 'accepte') {
+                message_flash('info', 'Votre demande d’adhésion est toujours en attente de validation par l’administrateur.');
+                header('Location: ' . BASE_URL . '/includes/waiting.php');
+                exit;
+            }
+
             session_regenerate_id(true);
 
             $_SESSION['user_id']     = (int)$user['id'];
