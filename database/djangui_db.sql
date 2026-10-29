@@ -344,3 +344,8 @@ INSERT INTO subscriptions (id, tontine_id, type_periode, montant, date_debut, da
 -- 10. Historique de transfert d'administrateur
 INSERT INTO admin_transfers (id, tontine_id, cycle_id, ancien_admin_id, nouvel_admin_id, ancien_reste_membre, motif, date_transfert) VALUES
 (1, 1, 1, 3, 1, 1, 'Passation de la gestion et de la caisse de réserve de Jean-Paul Kamga à Marie-Claire Ngono à la fin du Cycle 1.', '2026-08-31 18:00:00');
+
+ALTER TABLE users
+ADD COLUMN statut_validation ENUM('en_attente', 'accepte')
+NOT NULL DEFAULT 'accepte'
+AFTER statut_membre;
