@@ -45,10 +45,11 @@ if ($cycle_selectionne) {
 
     // Statistiques financières globales du cycle sélectionné
     $stmtStats = $pdo->prepare("
-        SELECT COALESCE(SUM(montant_attendu), 0) AS total_attendu,
-               COALESCE(SUM(montant_paye), 0) AS total_collecte
-        FROM contributions
-        WHERE cycle_id = ?
+        SELECT COALESCE(SUM(co.montant_attendu), 0) AS total_attendu,
+               COALESCE(SUM(co.montant_paye), 0) AS total_collecte
+        FROM contributions co
+        INNER JOIN cycle_members cm ON cm.id = co.cycle_member_id
+        WHERE cm.cycle_id = ?
     ");
     $stmtStats->execute([$cid]);
     $rowStats = $stmtStats->fetch();
@@ -79,7 +80,7 @@ if ($cycle_selectionne) {
         FROM contributions co
         JOIN cycle_members cm_ben ON cm_ben.id = co.beneficiaire_cycle_member_id
         JOIN users u ON u.id = cm_ben.user_id
-        WHERE co.cycle_id = ?
+        WHERE cm_ben.cycle_id = ?
         GROUP BY co.numero_seance, co.date_echeance, u.nom_complet, u.code_public
         ORDER BY co.numero_seance ASC
     ");
@@ -99,7 +100,7 @@ if ($cycle_selectionne) {
                (SELECT COALESCE(SUM(p.montant), 0) FROM penalties p WHERE p.cycle_member_id = cm.id AND p.statut != 'annule') AS total_penalites
         FROM cycle_members cm
         JOIN users u ON u.id = cm.user_id
-        LEFT JOIN contributions co ON co.cycle_member_id = cm.id AND co.cycle_id = cm.cycle_id
+        LEFT JOIN contributions co ON co.cycle_member_id = cm.id
         WHERE cm.cycle_id = ?
         GROUP BY cm.id, cm.rang_beneficiaire, cm.montant_pot_attendu, cm.montant_pot_recu, u.nom_complet, u.code_public, u.role
         ORDER BY cm.rang_beneficiaire IS NULL ASC, cm.rang_beneficiaire ASC
