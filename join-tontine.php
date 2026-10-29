@@ -26,10 +26,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($code_invitation === '' || $nom_complet === '' || $username === '' || $telephone === '' || $mot_de_passe === '') {
         $erreur = "Veuillez remplir tous les champs obligatoires (*).";
+    } elseif ($numero_cni === '') {
+        $erreur = "Veuillez renseigner votre numéro de CNI.";
     } elseif (!preg_match('/^[a-z0-9_]{4,30}$/', $username)) {
         $erreur = "Le nom d'utilisateur doit contenir entre 4 et 30 caractères alphanumériques ou _.";
     } elseif (strlen($mot_de_passe) < 6) {
         $erreur = "Le mot de passe doit contenir au moins 6 caractères.";
+    } elseif (!in_array($canal_paiement, ['momo', 'om', 'especes'], true)) {
+        $erreur = "Moyen de paiement invalide.";
+    } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $erreur = "Veuillez renseigner une adresse email valide.";
     } else {
         // 1. Vérifier que le code d'invitation correspond à une tontine active
         $stmtTontine = $pdo->prepare("SELECT * FROM tontines WHERE code_invitation = ? LIMIT 1");
@@ -48,41 +54,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmtUser->fetch()) {
                 $erreur = "Vous possédez déjà un compte sur Djangui (un membre ne peut appartenir qu'à une seule tontine). Connectez-vous directement.";
             } else {
-                $code_public   = 'DJG-' . date('Y') . '-M' . strtoupper(bin2hex(random_bytes(2)));
-                $password_hash = password_hash($mot_de_passe, PASSWORD_DEFAULT);
+                try {
+                    $code_public   = 'DJG-' . date('Y') . '-M' . strtoupper(bin2hex(random_bytes(2)));
+                    $password_hash = password_hash($mot_de_passe, PASSWORD_DEFAULT);
 
-                $stmtInsert = $pdo->prepare("
-                    INSERT INTO users (
-                        code_public, username, password_hash, nom_complet, telephone, email,
-                        role, statut_membre, canal_paiement, telephone_paiement, tontine_id, numero_cni
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'member', 'actif', ?, ?, ?, ?)
-                ");
-                $stmtInsert->execute([
-                    $code_public,
-                    $username,
-                    $password_hash,
-                    $nom_complet,
-                    $telephone,
-                    $email !== '' ? $email : null,
-                    $canal_paiement,
-                    $telephone_paiement !== '' ? $telephone_paiement : $telephone,
-                    (int)$tontine['id'],
-                    $numero_cni
-                ]);
+                    $stmtInsert = $pdo->prepare("
+                        INSERT INTO users (
+                            code_public, username, password_hash, nom_complet, telephone, email,
+                            role, statut_membre, statut_validation, canal_paiement,
+                            telephone_paiement, tontine_id, numero_cni
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'member', 'actif', 'en_attente', ?, ?, ?, ?)
+                    ");
+                    $stmtInsert->execute([
+                        $code_public,
+                        $username,
+                        $password_hash,
+                        $nom_complet,
+                        $telephone,
+                        $email !== '' ? $email : null,
+                        $canal_paiement,
+                        $telephone_paiement !== '' ? $telephone_paiement : $telephone,
+                        (int)$tontine['id'],
+                        $numero_cni
+                    ]);
 
-                $new_user_id = (int)$pdo->lastInsertId();
-
-                session_regenerate_id(true);
-                $_SESSION['user_id']     = $new_user_id;
-                $_SESSION['code_public'] = $code_public;
-                $_SESSION['username']    = $username;
-                $_SESSION['nom_complet'] = $nom_complet;
-                $_SESSION['role']        = 'member';
-                $_SESSION['tontine_id']  = (int)$tontine['id'];
-
-                message_flash('success', "Bienvenue dans la tontine « " . $tontine['nom'] . " » ! Votre carte de membre ({$code_public}) est prête.");
-                header('Location: ' . BASE_URL . '/member/dashboard.php');
-                exit;
+                    message_flash('success', 'Votre demande pour rejoindre la tontine « ' . $tontine['nom'] . ' » a été envoyée. Vous pourrez accéder à votre espace après validation par l’administrateur.');
+                    header('Location: ' . BASE_URL . '/includes/waiting.php');
+                    exit;
+                } catch (PDOException $e) {
+                    $erreur = "Impossible d'enregistrer votre demande. Vérifiez que vos coordonnées ne sont pas déjà utilisées.";
+                }
             }
         }
     }
