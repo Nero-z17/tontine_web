@@ -3,11 +3,13 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
+// Réserve cette page aux administrateurs et récupère l'identité de la tontine courante.
 verifier_admin();
 
 $tontine_id = (int)($_SESSION['tontine_id'] ?? 0);
 $user_id = (int)$_SESSION['user_id'];
 
+// Vérifie que l'utilisateur connecté est toujours l'administrateur enregistré de la tontine.
 $stmtTontine = $pdo->prepare("
     SELECT t.id, t.nom, t.admin_id, u.nom_complet AS nom_admin
     FROM tontines t
@@ -24,6 +26,7 @@ if (!$tontine || (int)$tontine['admin_id'] !== $user_id) {
     exit;
 }
 
+// Le formulaire de passation est traité uniquement après validation du jeton CSRF.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifier_csrf();
 
@@ -33,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // Nettoie et valide les valeurs reçues avant toute modification en base.
     $nouvel_admin_id = filter_var($_POST['nouvel_admin_id'] ?? null, FILTER_VALIDATE_INT);
     $cycle_id_saisi = trim((string)($_POST['cycle_id'] ?? ''));
     $cycle_id = $cycle_id_saisi === '' ? null : filter_var($cycle_id_saisi, FILTER_VALIDATE_INT);
@@ -52,8 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         message_flash('danger', 'Le motif ne doit pas dépasser 255 caractères.');
     } else {
         try {
+            // Regroupe toutes les modifications afin qu'elles soient annulées ensemble en cas d'erreur.
             $pdo->beginTransaction();
 
+            // Verrouille la tontine et confirme que l'administrateur n'a pas changé entre-temps.
             $stmtVerrouTontine = $pdo->prepare("
                 SELECT admin_id
                 FROM tontines
@@ -68,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('La responsabilité de cette tontine a déjà changé.');
             }
 
+            // Le futur administrateur doit être un membre actif de cette même tontine.
             $stmtNouveauAdmin = $pdo->prepare("
                 SELECT id, role, statut_membre
                 FROM users
@@ -86,20 +93,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Le membre choisi n’est plus éligible à cette passation.');
             }
 
+            // Le cycle est facultatif, mais s'il est fourni il doit encore être actif au moment de la validation.
             if ($cycle_id !== null) {
                 $stmtCycle = $pdo->prepare("
-                    SELECT id
+                    SELECT id, statut
                     FROM cycles
                     WHERE id = ? AND tontine_id = ?
                     LIMIT 1
                     FOR UPDATE
                 ");
                 $stmtCycle->execute([$cycle_id, $tontine_id]);
-                if (!$stmtCycle->fetchColumn()) {
-                    throw new RuntimeException('Le cycle sélectionné n’appartient pas à cette tontine.');
+                $cycle = $stmtCycle->fetch();
+                if (!$cycle || $cycle['statut'] !== 'actif') {
+                    throw new RuntimeException('Le cycle sélectionné n’est plus actif. La passation ne peut être associée qu’au cycle en cours.');
                 }
             }
 
+            // Rétrograde l'ancien administrateur et conserve son statut de membre selon le choix du formulaire.
             $stmtAncienAdmin = $pdo->prepare("
                 UPDATE users
                 SET role = 'member', statut_membre = ?
@@ -114,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Le compte de l’administrateur sortant a changé.');
             }
 
+            // Donne le rôle d'administrateur au membre sélectionné.
             $stmtPromouvoir = $pdo->prepare("
                 UPDATE users
                 SET role = 'admin', statut_membre = 'actif'
@@ -124,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Le membre choisi a changé avant la passation.');
             }
 
+            // Met à jour l'administrateur officiel de la tontine.
             $stmtChangerAdmin = $pdo->prepare("
                 UPDATE tontines
                 SET admin_id = ?
@@ -134,6 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('La responsabilité de la tontine a déjà changé.');
             }
 
+            // Conserve la date de validation et les détails de cette passation dans l'historique.
             $stmtHistorique = $pdo->prepare("
                 INSERT INTO admin_transfers (
                     tontine_id, cycle_id, ancien_admin_id, nouvel_admin_id,
@@ -150,18 +163,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             $pdo->commit();
-            message_flash('success', 'La passation d’administration a été enregistrée.');
-            $_SESSION['role'] = 'member';
 
+            // Après la validation, l'ancien administrateur quitte l'espace admin.
+            // S'il quitte aussi la tontine, sa session est supprimée; sinon son rôle de session devient membre.
             if ($ancien_reste_membre_saisi === '0') {
-                session_unset();
+                $_SESSION = [];
                 session_destroy();
+                session_start();
+                session_regenerate_id(true);
+                message_flash('success', 'La passation d’administration a été enregistrée.');
                 header('Location: ' . BASE_URL . '/login.php');
             } else {
+                $_SESSION['role'] = 'member';
+                message_flash('success', 'La passation d’administration a été enregistrée.');
                 header('Location: ' . BASE_URL . '/member/dashboard.php');
             }
             exit;
         } catch (PDOException | RuntimeException $e) {
+            // Une erreur avant la fin annule les changements pour éviter une passation incomplète.
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
@@ -180,6 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// Charge les membres actifs pouvant recevoir l'administration.
 $stmtMembres = $pdo->prepare("
     SELECT id, nom_complet, code_public
     FROM users
@@ -189,15 +209,17 @@ $stmtMembres = $pdo->prepare("
 $stmtMembres->execute([$tontine_id]);
 $membres = $stmtMembres->fetchAll();
 
+// Seuls les cycles actifs sont proposés; le cycle reste facultatif.
 $stmtCycles = $pdo->prepare("
     SELECT id, numero_cycle, titre, statut
     FROM cycles
-    WHERE tontine_id = ?
+    WHERE tontine_id = ? AND statut = 'actif'
     ORDER BY numero_cycle DESC
 ");
 $stmtCycles->execute([$tontine_id]);
 $cycles = $stmtCycles->fetchAll();
 
+// Récupère l'historique de la tontine, du transfert le plus récent au plus ancien.
 $stmtHistorique = $pdo->prepare("
     SELECT tr.date_transfert, tr.ancien_reste_membre, tr.motif,
            ua.nom_complet AS ancien_admin,
@@ -218,6 +240,7 @@ require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/navbar.php';
 ?>
 
+<!-- Présentation de la page et du formulaire de passation -->
 <div class="page-header-dark">
     <div class="container">
         <span class="badge bg-primary bg-opacity-25 text-primary px-3 py-2 rounded-pill fw-semibold mb-2">
@@ -272,12 +295,12 @@ require_once __DIR__ . '/../includes/navbar.php';
                         </div>
 
                         <div class="mb-3">
-                            <label for="cycle_id" class="form-label fw-semibold">Cycle concerné <span class="text-muted fw-normal">(facultatif)</span></label>
+                            <label for="cycle_id" class="form-label fw-semibold">Cycle en cours <span class="text-muted fw-normal">(facultatif)</span></label>
                             <select class="form-select" id="cycle_id" name="cycle_id">
-                                <option value="">Aucun cycle précisé</option>
+                                <option value="">Ne pas associer à un cycle</option>
                                 <?php foreach ($cycles as $cycle): ?>
                                     <option value="<?= (int)$cycle['id'] ?>">
-                                        Cycle #<?= (int)$cycle['numero_cycle'] ?> — <?= e($cycle['titre']) ?> (<?= e($cycle['statut']) ?>)
+                                        Cycle #<?= (int)$cycle['numero_cycle'] ?> — <?= e($cycle['titre']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
