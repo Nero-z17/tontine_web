@@ -1,5 +1,5 @@
 <?php
-// admin/draws.php — Tirage au sort aléatoire verrouillé et suivi des pots par bénéficiaire (Membre 2)
+// admin/draws.php — Tirage au sort aléatoire verrouillé et suivi des pots par séance (Membre 2)
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
@@ -7,131 +7,184 @@ verifier_admin();
 
 $tontine_id = (int)$_SESSION['tontine_id'];
 
-// 1. Récupérer le cycle actif (ou le dernier cycle si aucun n'est actif)
-$stmtCycle = $pdo->prepare("
+// 1. Récupérer tous les cycles de la tontine
+$stmtCycles = $pdo->prepare("
     SELECT * FROM cycles
     WHERE tontine_id = ?
     ORDER BY (statut = 'actif') DESC, numero_cycle DESC
-    LIMIT 1
 ");
-$stmtCycle->execute([$tontine_id]);
-$cycle = $stmtCycle->fetch();
+$stmtCycles->execute([$tontine_id]);
+$cycles = $stmtCycles->fetchAll();
 
-// 2. TRAITEMENT POST : LANCEMENT DU TIRAGE AU SORT OFFICIEL ET VERROUILLAGE
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lancer_tirage'])) {
+// Sélection du cycle à afficher (cycle demandé en GET ou cycle actif par défaut)
+$cycle_id_select = isset($_GET['cycle_id']) ? (int)$_GET['cycle_id'] : 0;
+$cycle_courant = null;
+
+foreach ($cycles as $c) {
+    if ($cycle_id_select > 0 && (int)$c['id'] === $cycle_id_select) {
+        $cycle_courant = $c;
+        break;
+    }
+    if ($cycle_id_select === 0 && $c['statut'] === 'actif') {
+        $cycle_courant = $c;
+        break;
+    }
+}
+if (!$cycle_courant && !empty($cycles)) {
+    $cycle_courant = $cycles[0];
+}
+
+// 2. TRAITEMENT POST : LANCER LE TIRAGE AU SORT ET VERROUILLER L'ORDRE DES BOUFFEURS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'lancer_tirage') {
     verifier_csrf();
+    $cycle_id_post = (int)($_POST['cycle_id'] ?? 0);
 
-    if (!$cycle || $cycle['statut'] !== 'actif') {
-        message_flash('danger', 'Aucun cycle actif trouvé. Activez d\'abord un cycle avant de lancer le tirage.');
-    } elseif ((int)$cycle['tirage_verrouille'] === 1) {
-        message_flash('warning', 'Le tirage au sort de ce cycle est déjà verrouillé et ne peut plus être modifié.');
+    $stmtVerif = $pdo->prepare("SELECT * FROM cycles WHERE id = ? AND tontine_id = ? LIMIT 1");
+    $stmtVerif->execute([$cycle_id_post, $tontine_id]);
+    $cycle_tirage = $stmtVerif->fetch();
+
+    if (!$cycle_tirage) {
+        message_flash('danger', 'Cycle introuvable.');
+    } elseif ($cycle_tirage['statut'] !== 'actif') {
+        message_flash('warning', 'Le cycle doit être activé avant de pouvoir lancer le tirage au sort.');
+    } elseif ((int)$cycle_tirage['tirage_verrouille'] === 1) {
+        message_flash('danger', 'Action refusée : le tirage au sort de ce cycle est déjà effectué et verrouillé.');
     } else {
-        try {
-            $pdo->beginTransaction();
+        // Récupérer tous les participants inscrits à ce cycle
+        $stmtPart = $pdo->prepare("SELECT id, user_id FROM cycle_members WHERE cycle_id = ?");
+        $stmtPart->execute([$cycle_id_post]);
+        $participants = $stmtPart->fetchAll();
 
-            // Récupérer les membres participants à ce cycle
-            $stmtParts = $pdo->prepare("SELECT id, user_id FROM cycle_members WHERE cycle_id = ? FOR UPDATE");
-            $stmtParts->execute([$cycle['id']]);
-            $participants = $stmtParts->fetchAll();
+        $nb = count($participants);
+        if ($nb < 2) {
+            message_flash('danger', 'Il faut au moins 2 participants dans le cycle pour lancer le tirage.');
+        } else {
+            try {
+                $pdo->beginTransaction();
 
-            $nb = count($participants);
-            if ($nb < 2) {
-                throw new Exception("Il faut au moins 2 participants dans le cycle pour effectuer le tirage.");
-            }
+                // Mélange aléatoire équitable des participants
+                shuffle($participants);
 
-            // Mélange aléatoire équitable des participants
-            shuffle($participants);
+                $montant_cotis = (float)$cycle_tirage['montant_cotisation'];
+                $pot_attendu   = $montant_cotis * $nb;
 
-            $montant_cotisation = (float)$cycle['montant_cotisation'];
-            $pot_attendu        = $montant_cotisation * $nb;
-            $date_base          = $cycle['date_debut'] ?: date('Y-m-d');
+                $stmtUpdateRang = $pdo->prepare("
+                    UPDATE cycle_members
+                    SET rang_beneficiaire = ?, montant_pot_attendu = ?
+                    WHERE id = ?
+                ");
 
-            // Supprimer d'éventuelles cotisations brouillon si le tirage n'était pas encore verrouillé
-            $stmtClean = $pdo->prepare("DELETE FROM contributions WHERE cycle_id = ?");
-            $stmtClean->execute([$cycle['id']]);
-
-            // Attribuer les rangs 1..N et calculer la date prévue de chaque séance
-            $stmtUpdCM = $pdo->prepare("
-                UPDATE cycle_members
-                SET rang_beneficiaire = ?, montant_pot_attendu = ?, date_bouffe_prevue = ?
-                WHERE id = ?
-            ");
-
-            $seances_info = [];
-            foreach ($participants as $index => $part) {
-                $rang = $index + 1;
-                $decalage = match ($cycle['frequence']) {
-                    'hebdo'     => '+' . $index . ' weeks',
-                    'bimensuel' => '+' . ($index * 15) . ' days',
-                    default     => '+' . $index . ' months',
-                };
-                $date_seance = date('Y-m-d', strtotime($date_base . ' ' . $decalage));
-
-                $stmtUpdCM->execute([$rang, $pot_attendu, $date_seance, $part['id']]);
-
-                $seances_info[] = [
-                    'numero_seance'               => $rang,
-                    'date_echeance'               => $date_seance,
-                    'beneficiaire_cycle_member_id'=> (int)$part['id'],
-                ];
-            }
-
-            // Générer automatiquement le carnet des cotisations (contributions) pour chaque séance
-            $stmtInsContrib = $pdo->prepare("
-                INSERT INTO contributions (
-                    cycle_id, numero_seance, date_echeance, cycle_member_id,
-                    beneficiaire_cycle_member_id, montant_attendu, montant_paye, statut
-                ) VALUES (?, ?, ?, ?, ?, ?, 0.00, 'en_attente')
-            ");
-
-            foreach ($seances_info as $seance) {
-                foreach ($participants as $cotisant) {
-                    $stmtInsContrib->execute([
-                        (int)$cycle['id'],
-                        $seance['numero_seance'],
-                        $seance['date_echeance'],
-                        (int)$cotisant['id'],
-                        $seance['beneficiaire_cycle_member_id'],
-                        $montant_cotisation
-                    ]);
+                foreach ($participants as $index => $p) {
+                    $rang = $index + 1;
+                    $stmtUpdateRang->execute([$rang, $pot_attendu, (int)$p['id']]);
+                    $participants[$index]['rang'] = $rang;
                 }
-            }
 
-            // Verrouiller définitivement le tirage au sort du cycle
-            $stmtLock = $pdo->prepare("UPDATE cycles SET tirage_verrouille = 1 WHERE id = ?");
-            $stmtLock->execute([$cycle['id']]);
+                // Nettoyage de sécurité des cotisations non payées si un brouillon existait
+                $stmtClean = $pdo->prepare("
+                    DELETE co FROM contributions co
+                    INNER JOIN cycle_members cm ON cm.id = co.cycle_member_id
+                    WHERE cm.cycle_id = ? AND co.montant_paye = 0
+                ");
+                $stmtClean->execute([$cycle_id_post]);
 
-            $pdo->commit();
-            message_flash('success', "Tirage au sort effectué et scellé avec succès ! Les {$nb} séances de cotisation ont été générées.");
-        } catch (Exception $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
+                // Génération automatique des séances de cotisation (Sans colonne cycle_id dans contributions)
+                $stmtInsertCotis = $pdo->prepare("
+                    INSERT INTO contributions (
+                        cycle_member_id, beneficiaire_cycle_member_id,
+                        numero_seance, date_echeance, montant_attendu, montant_paye, statut
+                    ) VALUES (?, ?, ?, ?, ?, 0.00, 'en_attente')
+                ");
+
+                $date_base = $cycle_tirage['date_debut'];
+                $frequence = $cycle_tirage['frequence'];
+
+                foreach ($participants as $seance_index => $beneficiaire) {
+                    $numero_seance = $seance_index + 1;
+
+                    // Calcul de la date d'échéance de chaque séance
+                    if ($seance_index === 0) {
+                        $date_echeance = $date_base;
+                    } else {
+                        $decalage = match ($frequence) {
+                            'hebdo'     => '+' . $seance_index . ' weeks',
+                            'bimensuel' => '+' . ($seance_index * 15) . ' days',
+                            default     => '+' . $seance_index . ' months',
+                        };
+                        $date_echeance = date('Y-m-d', strtotime($date_base . ' ' . $decalage));
+                    }
+
+                    // Chaque membre du cycle doit cotiser pour le bénéficiaire ("bouffeur") de cette séance
+                    foreach ($participants as $cotisant) {
+                        $stmtInsertCotis->execute([
+                            (int)$cotisant['id'],
+                            (int)$beneficiaire['id'],
+                            $numero_seance,
+                            $date_echeance,
+                            $montant_cotis
+                        ]);
+                    }
+                }
+
+                // Verrouillage définitif du tirage au sort sur le cycle
+                $stmtLock = $pdo->prepare("UPDATE cycles SET tirage_verrouille = 1 WHERE id = ?");
+                $stmtLock->execute([$cycle_id_post]);
+
+                $pdo->commit();
+                message_flash('success', 'Tirage au sort effectué et verrouillé avec succès ! Toutes les séances de cotisation ont été générées.');
+            } catch (PDOException $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                message_flash('danger', 'Erreur lors du tirage au sort : ' . $e->getMessage());
             }
-            message_flash('danger', 'Erreur lors du tirage au sort : ' . $e->getMessage());
         }
     }
 
-    header('Location: ' . BASE_URL . '/admin/draws.php');
+    header('Location: ' . BASE_URL . '/admin/draws.php?cycle_id=' . $cycle_id_post);
     exit;
 }
 
-// 3. Récupérer l'ordre des bénéficiaires du cycle sélectionné
-$beneficiaires = [];
-if ($cycle) {
-    $stmtBen = $pdo->prepare("
-        SELECT cm.*, u.nom_complet, u.code_public, u.role, u.canal_paiement, u.telephone_paiement,
-               (SELECT COUNT(*) FROM contributions co WHERE co.cycle_id = cm.cycle_id AND co.beneficiaire_cycle_member_id = cm.id AND co.statut = 'paye') AS nb_cotisations_payees,
-               (SELECT COUNT(*) FROM contributions co WHERE co.cycle_id = cm.cycle_id AND co.beneficiaire_cycle_member_id = cm.id) AS nb_cotisations_total
+// 3. RÉCUPÉRATION DES RÉSULTATS DU TIRAGE ET DE L'AVANCEMENT DES POTS
+$membres_cycle = [];
+$seances_stats = [];
+
+if ($cycle_courant) {
+    $cid = (int)$cycle_courant['id'];
+
+    // Liste des participants et de leur rang de bouffeur
+    $stmtMC = $pdo->prepare("
+        SELECT cm.*, u.code_public, u.nom_complet, u.telephone, u.canal_paiement, u.telephone_paiement, u.role
         FROM cycle_members cm
-        JOIN users u ON u.id = cm.user_id
+        INNER JOIN users u ON u.id = cm.user_id
         WHERE cm.cycle_id = ?
-        ORDER BY cm.rang_beneficiaire IS NULL ASC, cm.rang_beneficiaire ASC, u.nom_complet ASC
+        ORDER BY (cm.rang_beneficiaire IS NULL) ASC, cm.rang_beneficiaire ASC, u.nom_complet ASC
     ");
-    $stmtBen->execute([$cycle['id']]);
-    $beneficiaires = $stmtBen->fetchAll();
+    $stmtMC->execute([$cid]);
+    $membres_cycle = $stmtMC->fetchAll();
+
+    // CORRECTION LIGNE 130 : Jointure avec cycle_members cm pour filtrer par cm.cycle_id
+    $stmtSeances = $pdo->prepare("
+        SELECT co.numero_seance,
+               co.date_echeance,
+               co.beneficiaire_cycle_member_id,
+               COUNT(co.id) AS nb_cotisations,
+               SUM(CASE WHEN co.statut = 'paye' THEN 1 ELSE 0 END) AS nb_payees,
+               COALESCE(SUM(co.montant_attendu), 0) AS total_attendu_seance,
+               COALESCE(SUM(co.montant_paye), 0) AS total_paye_seance
+        FROM contributions co
+        INNER JOIN cycle_members cm ON cm.id = co.cycle_member_id
+        WHERE cm.cycle_id = ?
+        GROUP BY co.numero_seance, co.date_echeance, co.beneficiaire_cycle_member_id
+        ORDER BY co.numero_seance ASC
+    ");
+    $stmtSeances->execute([$cid]);
+    foreach ($stmtSeances->fetchAll() as $row) {
+        $seances_stats[(int)$row['numero_seance']] = $row;
+    }
 }
 
-$titre_page = "Tirage au sort & Suivi des Pots";
+$titre_page = "Tirage au Sort & Ordre des Bouffeurs";
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/navbar.php';
 ?>
@@ -139,163 +192,175 @@ require_once __DIR__ . '/../includes/navbar.php';
 <div class="page-header-dark">
     <div class="container">
         <div class="row align-items-center g-3">
-            <div class="col-lg-8">
-                <span class="badge bg-info text-dark px-3 py-2 rounded-pill fw-bold mb-2">
-                    <i class="bi bi-shuffle me-1"></i>ORDRE DES BÉNÉFICIAIRES (« BOUFFEURS »)
+            <div class="col-lg-7">
+                <span class="badge bg-primary bg-opacity-25 text-primary px-3 py-2 rounded-pill fw-semibold mb-2">
+                    <i class="bi bi-shuffle me-1"></i>TIRAGE AU SORT ÉQUITABLE & SCELLÉ
                 </span>
-                <h1 class="fw-bold h2 mb-1">Tirage au Sort & Réception des Pots</h1>
+                <h1 class="fw-bold h2 mb-1">Ordre des Bénéficiaires (« Bouffeurs »)</h1>
                 <p class="text-muted small mb-0">
-                    Le tirage est réalisé une seule fois par cycle puis verrouillé pour garantir une équité totale entre tous les membres.
+                    Le tirage attribue un rang unique à chaque participant et se verrouille automatiquement pour tout le cycle.
                 </p>
             </div>
-            <div class="col-lg-4 text-lg-end">
-                <a href="<?= BASE_URL ?>/admin/cycles.php" class="btn btn-outline-primary btn-sm rounded-pill px-3">
-                    <i class="bi bi-arrow-left me-1"></i>Gestion des cycles
-                </a>
+            <div class="col-lg-5">
+                <?php if (!empty($cycles)): ?>
+                    <form method="GET" action="draws.php" class="d-flex gap-2 justify-content-lg-end">
+                        <select name="cycle_id" class="form-select form-select-sm" style="max-width: 280px;" onchange="this.form.submit()">
+                            <?php foreach ($cycles as $c): ?>
+                                <option value="<?= (int)$c['id'] ?>" <?= ($cycle_courant && (int)$cycle_courant['id'] === (int)$c['id']) ? 'selected' : '' ?>>
+                                    Cycle #<?= (int)$c['numero_cycle'] ?> — <?= e($c['titre'] ?? '') ?> (<?= e(ucfirst($c['statut'])) ?>)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </form>
+                <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
 
 <div class="container pb-5">
-    <?php if (!$cycle): ?>
+    <?php if (!$cycle_courant): ?>
         <div class="card card-djangui p-5 text-center">
-            <i class="bi bi-exclamation-circle fs-1 text-warning mb-3"></i>
-            <h4 class="fw-bold">Aucun cycle disponible</h4>
-            <p class="text-muted">Créez et activez d'abord un cycle de cotisation pour organiser le tirage au sort.</p>
+            <i class="bi bi-arrow-repeat fs-1 text-muted mb-3"></i>
+            <h4 class="fw-bold">Aucun cycle trouvé</h4>
+            <p class="text-muted small mb-3">Veuillez d'abord créer et activer un cycle dans la gestion des cycles.</p>
             <div>
-                <a href="<?= BASE_URL ?>/admin/cycles.php" class="btn btn-glow-emerald px-4">Créer un cycle</a>
+                <a href="<?= BASE_URL ?>/admin/cycles.php" class="btn btn-glow-blue">Créer un cycle</a>
             </div>
         </div>
     <?php else: ?>
 
-        <!-- BANNIÈRE D'ÉTAT DU TIRAGE DU CYCLE -->
+        <!-- BANNIÈRE D'ACTION DU TIRAGE AU SORT -->
         <div class="card-accent-djangui p-4 mb-4">
             <div class="row align-items-center g-3">
                 <div class="col-lg-8">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <span class="badge bg-primary">CYCLE #<?= (int)$cycle['numero_cycle'] ?></span>
-                        <?php if ((int)$cycle['tirage_verrouille'] === 1): ?>
-                            <span class="badge bg-success"><i class="bi bi-shield-lock-fill me-1"></i>Tirage Officiel Verrouillé</span>
+                        <span class="badge bg-primary rounded-pill">Cycle #<?= (int)$cycle_courant['numero_cycle'] ?></span>
+                        <?php if ((int)$cycle_courant['tirage_verrouille'] === 1): ?>
+                            <span class="badge bg-success rounded-pill"><i class="bi bi-lock-fill me-1"></i>Tirage Verrouillé</span>
                         <?php else: ?>
-                            <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>En attente de tirage</span>
+                            <span class="badge bg-warning text-dark rounded-pill"><i class="bi bi-unlock-fill me-1"></i>En attente de tirage</span>
                         <?php endif; ?>
                     </div>
-                    <h4 class="fw-bold mb-1"><?= e($cycle['titre'] ?? ('Cycle #' . $cycle['numero_cycle'])) ?></h4>
+                    <h4 class="fw-bold mb-1">
+                        <?= e($cycle_courant['titre'] ?? ('Cycle #' . $cycle_courant['numero_cycle'])) ?> —
+                        Pot de <?= format_fcfa((float)$cycle_courant['montant_cotisation'] * count($membres_cycle)) ?> par tour
+                    </h4>
                     <p class="text-muted small mb-0">
-                        Cotisation : <strong><?= format_fcfa($cycle['montant_cotisation']) ?></strong> |
-                        Participants : <strong><?= count($beneficiaires) ?> membres</strong> |
-                        Pot complet par bénéficiaire : <strong><?= format_fcfa((float)$cycle['montant_cotisation'] * count($beneficiaires)) ?></strong>
+                        <?= count($membres_cycle) ?> participants inscrits • Cotisation individuelle :
+                        <strong><?= format_fcfa($cycle_courant['montant_cotisation']) ?></strong>
                     </p>
                 </div>
 
                 <div class="col-lg-4 text-lg-end">
-                    <?php if ((int)$cycle['tirage_verrouille'] === 0 && $cycle['statut'] === 'actif'): ?>
-                        <form method="POST" action="draws.php" id="formTirage">
+                    <?php if ((int)$cycle_courant['tirage_verrouille'] === 0 && $cycle_courant['statut'] === 'actif'): ?>
+                        <form method="POST" action="draws.php" id="formTirage" onsubmit="return confirm('Attention : le tirage au sort est unique et sera verrouillé définitivement pour ce cycle. Confirmer ?');">
                             <?= champ_csrf() ?>
-                            <input type="hidden" name="lancer_tirage" value="1">
-                            <button type="submit" class="btn btn-glow-emerald btn-lg px-4" id="btnLancerTirage">
-                                <i class="bi bi-dice-5-fill me-2"></i>Lancer le tirage au sort
+                            <input type="hidden" name="action" value="lancer_tirage">
+                            <input type="hidden" name="cycle_id" value="<?= (int)$cycle_courant['id'] ?>">
+                            <button type="submit" class="btn btn-glow-emerald btn-lg px-4">
+                                <i class="bi bi-shuffle me-2"></i>Lancer le tirage au sort
                             </button>
                         </form>
-                    <?php elseif ((int)$cycle['tirage_verrouille'] === 1): ?>
-                        <div class="p-3 rounded-3 accent-subbox d-inline-block text-start small">
-                            <div class="fw-bold text-success"><i class="bi bi-check-circle-fill me-1"></i>Ordre scellé pour tout le cycle</div>
-                            <div class="text-muted">Aucune modification manuelle n'est autorisée.</div>
+                    <?php elseif ($cycle_courant['statut'] === 'brouillon'): ?>
+                        <a href="<?= BASE_URL ?>/admin/cycles.php" class="btn btn-warning fw-bold text-dark">
+                            Activer d'abord ce cycle
+                        </a>
+                    <?php else: ?>
+                        <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-3 accent-subbox small fw-semibold">
+                            <i class="bi bi-shield-check text-success fs-5"></i>
+                            <span>Ordre officiel scellé pour tout le cycle</span>
                         </div>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
 
-        <!-- Animation visuelle lors du clic sur "Lancer le tirage" -->
-        <div id="animationTirageBox" class="card card-djangui p-5 text-center mb-4 d-none">
-            <div class="spinner-border text-primary mx-auto mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
-            <h4 class="fw-bold text-primary" id="nomRoulette">Mélange aléatoire des membres en cours...</h4>
-            <p class="text-muted small mb-0">Attribution des rangs et création automatique du calendrier des séances...</p>
-        </div>
-
-        <!-- TABLEAU DE L'ORDRE DES BOUFFEURS ET SUIVI DES POTS -->
-        <div class="card card-djangui p-4">
+        <!-- TABLEAU OFFICIEL DE L'ORDRE DES BOUFFEURS ET DU SUIVI DES POTS -->
+        <div class="card card-djangui p-4 border-left-navy">
             <h5 class="fw-bold mb-3">
-                <i class="bi bi-trophy-fill text-warning me-2"></i>Ordre officiel de passage et suivi de réception des pots
+                <i class="bi bi-trophy-fill text-warning me-2"></i>Ordre de passage et réception des pots
             </h5>
 
             <div class="table-responsive">
                 <table class="table table-djangui align-middle mb-0">
                     <thead>
                         <tr>
-                            <th>Rang / Séance</th>
+                            <th>Rang</th>
                             <th>Membre Bénéficiaire (« Bouffeur »)</th>
-                            <th>Compte de réception du pot</th>
-                            <th>Date prévue</th>
-                            <th>Progression du Pot reçu</th>
-                            <th>Statut du Pot</th>
+                            <th>Compte de Réception</th>
+                            <th>Date de Séance</th>
+                            <th>Pot Reçu / Attendu</th>
+                            <th>État du Pot</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($beneficiaires as $b): ?>
+                        <?php foreach ($membres_cycle as $m): ?>
                             <?php
-                            $attendu = (float)$b['montant_pot_attendu'];
-                            $recu    = (float)$b['montant_pot_recu'];
-                            $reste   = max(0, $attendu - $recu);
-                            $pct     = ($attendu > 0) ? round(($recu / $attendu) * 100, 1) : 0;
+                                $rang = $m['rang_beneficiaire'] ? (int)$m['rang_beneficiaire'] : null;
+                                $info_seance = ($rang && isset($seances_stats[$rang])) ? $seances_stats[$rang] : null;
+                                $pot_attendu = (float)$m['montant_pot_attendu'];
+                                $pot_recu    = $info_seance ? max((float)$m['montant_pot_recu'], (float)$info_seance['total_paye_seance']) : (float)$m['montant_pot_recu'];
+                                $pct_pot     = $pot_attendu > 0 ? min(100, round(($pot_recu / $pot_attendu) * 100)) : 0;
+                                $manque_pot  = max(0, $pot_attendu - $pot_recu);
                             ?>
                             <tr>
                                 <td>
-                                    <?php if (!empty($b['rang_beneficiaire'])): ?>
-                                        <span class="badge bg-primary fs-6 px-3 py-2 rounded-pill">
-                                            Tour n°<?= (int)$b['rang_beneficiaire'] ?>
-                                        </span>
+                                    <?php if ($rang): ?>
+                                        <span class="badge bg-primary rounded-pill px-3 py-2 fs-6">Tour n°<?= $rang ?></span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary">Non tiré</span>
+                                        <span class="badge bg-secondary rounded-pill">Non tiré</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div class="fw-bold">
-                                        <?= e($b['nom_complet']) ?>
-                                        <?php if ($b['role'] === 'admin'): ?>
-                                            <span class="badge bg-primary-subtle text-primary ms-1">Secrétaire</span>
+                                    <div class="fw-bold"><?= e($m['nom_complet']) ?></div>
+                                    <div class="small text-muted">
+                                        <?= e($m['code_public']) ?>
+                                        <?php if ($m['role'] === 'admin'): ?>
+                                            • <span class="text-primary fw-semibold">Secrétaire</span>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="small text-muted"><?= e($b['code_public']) ?></div>
                                 </td>
-                                <td class="small">
-                                    <span class="badge bg-info-subtle text-info-emphasis text-uppercase me-1">
-                                        <?= e($b['canal_paiement']) ?>
+                                <td>
+                                    <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-uppercase">
+                                        <?= e($m['canal_paiement']) ?>
                                     </span>
-                                    <span class="fw-semibold"><?= e($b['telephone_paiement']) ?></span>
+                                    <div class="small fw-semibold mt-1"><?= e($m['telephone_paiement'] ?: $m['telephone']) ?></div>
                                 </td>
-                                <td class="small fw-semibold">
-                                    <?= !empty($b['date_bouffe_prevue']) ? e($b['date_bouffe_prevue']) : '—' ?>
+                                <td>
+                                    <?php if ($info_seance): ?>
+                                        <div class="fw-semibold">
+                                            <i class="bi bi-calendar-event text-primary me-1"></i>
+                                            <?= date('d/m/Y', strtotime($info_seance['date_echeance'])) ?>
+                                        </div>
+                                        <span class="small text-muted">Séance #<?= $rang ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted small">—</span>
+                                    <?php endif; ?>
                                 </td>
-                                <td style="min-width: 230px;">
+                                <td style="min-width: 220px;">
                                     <div class="d-flex justify-content-between small mb-1">
-                                        <span class="fw-bold text-success"><?= format_fcfa($recu) ?></span>
-                                        <span class="text-muted">sur <?= format_fcfa($attendu) ?></span>
+                                        <strong class="text-success"><?= format_fcfa($pot_recu) ?></strong>
+                                        <span class="text-muted">/ <?= format_fcfa($pot_attendu) ?></span>
                                     </div>
-                                    <div class="progress" style="height: 8px;">
-                                        <div class="progress-bar bg-success" style="width: <?= min(100, $pct) ?>%"></div>
+                                    <div class="progress" style="height: 7px;">
+                                        <div class="progress-bar bg-success" style="width: <?= $pct_pot ?>%"></div>
                                     </div>
-                                    <?php if ($reste > 0 && !empty($b['rang_beneficiaire'])): ?>
-                                        <div class="small text-warning-emphasis mt-1" style="font-size: 0.75rem;">
-                                            Reste à percevoir : <strong><?= format_fcfa($reste) ?></strong>
+                                    <?php if ($rang && $manque_pot > 0): ?>
+                                        <div class="small text-danger mt-1">
+                                            Reliquat dû à ce bouffeur : <strong><?= format_fcfa($manque_pot) ?></strong>
                                         </div>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if ((int)$b['pot_totalement_recu'] === 1 || ($attendu > 0 && $recu >= $attendu)): ?>
-                                        <span class="badge bg-success-subtle text-success px-3 py-2 rounded-pill">
-                                            <i class="bi bi-check-circle-fill me-1"></i>Pot 100 % reçu
-                                        </span>
-                                    <?php elseif ($recu > 0): ?>
-                                        <span class="badge bg-warning-subtle text-warning-emphasis px-3 py-2 rounded-pill">
-                                            <i class="bi bi-clock-history me-1"></i>Partiel (Reliquat attendu)
-                                        </span>
+                                    <?php if (!$rang): ?>
+                                        <span class="badge bg-secondary">En attente du tirage</span>
+                                    <?php elseif ($pct_pot >= 100 || (int)$m['pot_totalement_recu'] === 1): ?>
+                                        <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Pot complet reçu</span>
+                                    <?php elseif ($pot_recu > 0): ?>
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Partiel (<?= $pct_pot ?> %)</span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary-subtle text-secondary px-3 py-2 rounded-pill">
-                                            En attente de son tour
-                                        </span>
+                                        <span class="badge bg-info text-dark">Tour à venir</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -307,24 +372,5 @@ require_once __DIR__ . '/../includes/navbar.php';
 
     <?php endif; ?>
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const formTirage = document.getElementById('formTirage');
-    const animBox = document.getElementById('animationTirageBox');
-    const btnTirage = document.getElementById('btnLancerTirage');
-
-    if (formTirage && animBox && btnTirage) {
-        formTirage.addEventListener('submit', function (e) {
-            e.preventDefault();
-            btnTirage.disabled = true;
-            animBox.classList.remove('d-none');
-            setTimeout(function () {
-                formTirage.submit();
-            }, 1400);
-        });
-    }
-});
-</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

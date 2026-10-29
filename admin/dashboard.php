@@ -32,13 +32,13 @@ $bouffeur_nom = '—';
 $dernier_paiements = [];
 
 if ($cycle) {
-    // 3. Somme attendue et collectee sur les contributions du cycle actif
+    // 3. Somme attendue et collectée sur les contributions du cycle actif
     $stmtStats = $pdo->prepare("
         SELECT
-            COALESCE(SUM(co.montant_attendu), 0) AS total_attendu,
-            COALESCE(SUM(co.montant_paye), 0) AS total_collecte
-        FROM contributions co
-        JOIN cycle_members cm ON cm.id = co.cycle_member_id
+            COALESCE(SUM(c.montant_attendu), 0) AS total_attendu,
+            COALESCE(SUM(c.montant_paye), 0) AS total_collecte
+        FROM contributions c
+        INNER JOIN cycle_members cm ON cm.id = c.cycle_member_id
         WHERE cm.cycle_id = ?
     ");
     $stmtStats->execute([$cycle_id]);
@@ -50,12 +50,11 @@ if ($cycle) {
         $taux_cotisation = round(($montant_collecte / $montant_attendu) * 100, 2);
     }
 
-    // 4. Membres en retard / en regle pour la séance en cours
-    // On prend la séance la plus récente (la plus haute numero_seance) de ce cycle
+    // 4. Membres en retard / en règle pour la séance en cours
     $stmtDerniereSeance = $pdo->prepare("
-        SELECT MAX(numero_seance) AS max_numero
-        FROM contributions co
-        JOIN cycle_members cm ON cm.id = co.cycle_member_id
+        SELECT MAX(c.numero_seance) AS max_numero
+        FROM contributions c
+        INNER JOIN cycle_members cm ON cm.id = c.cycle_member_id
         WHERE cm.cycle_id = ?
     ");
     $stmtDerniereSeance->execute([$cycle_id]);
@@ -65,7 +64,7 @@ if ($cycle) {
         $stmtRetards = $pdo->prepare("
             SELECT COUNT(*)
             FROM contributions c
-            JOIN cycle_members cm ON cm.id = c.cycle_member_id
+            INNER JOIN cycle_members cm ON cm.id = c.cycle_member_id
             WHERE cm.cycle_id = ?
               AND c.numero_seance = ?
               AND c.montant_paye < c.montant_attendu
@@ -77,7 +76,7 @@ if ($cycle) {
         $stmtRegles = $pdo->prepare("
             SELECT COUNT(*)
             FROM contributions c
-            JOIN cycle_members cm ON cm.id = c.cycle_member_id
+            INNER JOIN cycle_members cm ON cm.id = c.cycle_member_id
             WHERE cm.cycle_id = ?
               AND c.numero_seance = ?
               AND c.montant_paye >= c.montant_attendu
@@ -86,20 +85,18 @@ if ($cycle) {
         $membres_en_regle = (int)$stmtRegles->fetchColumn();
     }
 
-    // 5. Bouffeur de la derniere seance / seance courante
+    // 5. Bouffeur de la séance courante
     $stmtBouffeur = $pdo->prepare("
         SELECT u.nom_complet
         FROM contributions c
-        JOIN cycle_members cotisant ON cotisant.id = c.cycle_member_id
-        JOIN cycle_members beneficiaire ON beneficiaire.id = c.beneficiaire_cycle_member_id
-        JOIN users u ON u.id = beneficiaire.user_id
-        WHERE cotisant.cycle_id = ?
-        AND beneficiaire.cycle_id = ?
-        AND c.numero_seance = ?
-        GROUP BY beneficiaire.id, u.id, u.nom_complet
+        INNER JOIN cycle_members cm ON cm.id = c.beneficiaire_cycle_member_id
+        INNER JOIN users u ON u.id = cm.user_id
+        WHERE cm.cycle_id = ?
+          AND c.numero_seance = ?
+        GROUP BY u.id, u.nom_complet
         LIMIT 1
     ");
-    $stmtBouffeur->execute([$cycle_id, $cycle_id, $derniereSeance]);
+    $stmtBouffeur->execute([$cycle_id, $derniereSeance]);
     $bouffeur = $stmtBouffeur->fetch();
     if ($bouffeur) {
         $bouffeur_nom = $bouffeur['nom_complet'];
@@ -110,9 +107,9 @@ if ($cycle) {
         SELECT p.id, p.date_paiement, p.montant_total, p.mode_paiement, p.statut_paiement,
                u.nom_complet AS payeur_nom
         FROM payments p
-        JOIN users u ON u.id = p.paye_par_user_id
-        JOIN contributions c ON c.id = p.contribution_id
-        JOIN cycle_members cm ON cm.id = c.cycle_member_id
+        INNER JOIN users u ON u.id = p.paye_par_user_id
+        INNER JOIN contributions c ON c.id = p.contribution_id
+        INNER JOIN cycle_members cm ON cm.id = c.cycle_member_id
         WHERE cm.cycle_id = ?
         ORDER BY p.date_paiement DESC
         LIMIT 5

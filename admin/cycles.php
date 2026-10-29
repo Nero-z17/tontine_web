@@ -160,11 +160,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // 4. Récupérer la liste de tous les cycles de la tontine avec statistiques
+// 4. Récupérer la liste de tous les cycles de la tontine avec statistiques (Corrigé via cycle_members)
 $stmtCycles = $pdo->prepare("
     SELECT c.*,
            (SELECT COUNT(*) FROM cycle_members cm WHERE cm.cycle_id = c.id) AS nb_participants,
-           (SELECT COALESCE(SUM(montant_attendu), 0) FROM contributions co WHERE co.cycle_id = c.id) AS total_attendu,
-           (SELECT COALESCE(SUM(montant_paye), 0) FROM contributions co WHERE co.cycle_id = c.id) AS total_collecte
+           (SELECT COALESCE(SUM(co.montant_attendu), 0)
+            FROM contributions co
+            INNER JOIN cycle_members cm ON cm.id = co.cycle_member_id
+            WHERE cm.cycle_id = c.id) AS total_attendu,
+           (SELECT COALESCE(SUM(co.montant_paye), 0)
+            FROM contributions co
+            INNER JOIN cycle_members cm ON cm.id = co.cycle_member_id
+            WHERE cm.cycle_id = c.id) AS total_collecte
     FROM cycles c
     WHERE c.tontine_id = ?
     ORDER BY c.numero_cycle DESC
