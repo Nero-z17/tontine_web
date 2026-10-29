@@ -28,6 +28,6 @@ $titre_complet = isset($titre_page) ? e($titre_page) . ' — Djangui' : 'Djangui
     <!-- Police Google Fonts Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Feuille de style personnalisée Djangui (Light & Dark) -->
-    <link href="<?= BASE_URL ?>/assets/css/style.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>/assets/css/style.css?v=<?= time() ?>" rel="stylesheet">
 </head>
 <body>
