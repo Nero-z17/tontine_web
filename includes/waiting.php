@@ -1,11 +1,8 @@
 <?php
-require_once __DIR__ . '/db.php';
-require_once __DIR__ . '/functions.php';
 
 $titre_page = 'Demande en attente';
 require_once __DIR__ . '/header.php';
 require_once __DIR__ . '/navbar.php';
-
 ?>
 
 <main class="container py-5">
@@ -21,10 +18,6 @@ require_once __DIR__ . '/navbar.php';
                     Veuillez attendre que son administrateur approuve votre adhésion.
                     Vous pourrez ensuite vous connecter pour accéder à votre tableau de bord membre.
                 </p>
-
-                <?php if ($flash_texte !== ''): ?>
-                    <div class="alert alert-<?= e($flash_type) ?> small" role="status"><?= e($flash_texte) ?></div>
-                <?php endif; ?>
 
                 <a href="<?= BASE_URL ?>/login.php" class="btn btn-glow-blue">
                     <i class="bi bi-box-arrow-in-right me-2"></i>Aller à la connexion
