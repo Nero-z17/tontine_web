@@ -52,7 +52,7 @@ if ($cycle) {
             FROM contributions co
             JOIN cycle_members cm_cot ON cm_cot.id = co.cycle_member_id
             JOIN users u ON u.id = cm_cot.user_id
-            WHERE co.cycle_id = ? AND co.beneficiaire_cycle_member_id = ?
+            WHERE cm_cot.cycle_id = ? AND co.beneficiaire_cycle_member_id = ?
             ORDER BY co.statut = 'paye' DESC, u.nom_complet ASC
         ");
         $stmtPot->execute([$cycle['id'], $ma_fiche_cycle['id']]);
@@ -103,7 +103,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                 n°<?= (int)$ma_fiche_cycle['rang_beneficiaire'] ?>
                             </div>
                             <div class="small fw-semibold">
-                                Date prévue : <strong><?= e($ma_fiche_cycle['date_bouffe_prevue'] ?? '—') ?></strong>
+                                Date prévue : <strong><?= e($ma_fiche_cycle['date_prevue_pot'] ?? '—') ?></strong>
                             </div>
                         <?php else: ?>
                             <div class="h3 fw-bold my-3">Tirage en attente</div>
@@ -227,7 +227,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                                 <span class="badge bg-success ms-1">Moi</span>
                                             <?php endif; ?>
                                         </td>
-                                        <td><?= e($oc['date_bouffe_prevue'] ?? '—') ?></td>
+                                        <td><?= e($oc['date_prevue_pot'] ?? '—') ?></td>
                                         <td>
                                             <?php if ((int)$oc['pot_totalement_recu'] === 1 || ((float)$oc['montant_pot_attendu'] > 0 && (float)$oc['montant_pot_recu'] >= (float)$oc['montant_pot_attendu'])): ?>
                                                 <span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Servi</span>
