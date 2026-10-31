@@ -265,12 +265,12 @@ CREATE TABLE admin_transfers (
 -- ============================================================================
 
 -- 1. Utilisateurs : Marie-Claire Ngono (id=1) est la Secrétaire/Admin ET membre cotisante
-INSERT INTO users (id, code_public, username, password_hash, nom_complet, telephone, email, numero_cni, role, statut_membre, canal_paiement, telephone_paiement, doit_changer_mdp) VALUES
-(1, 'DJG-2026-SEC01', 'ngono_secretaire', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Marie-Claire Ngono', '+237699223344', 'mc.ngono@djangui.cm', 'CNI-CE-554433221', 'admin', 'actif', 'om', '+237699223344', 0),
-(2, 'DJG-2026-MBR02', 'fotso_eric', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Éric Fotso', '+237670334455', 'eric.fotso@djangui.cm', 'CNI-OU-998877665', 'member', 'actif', 'momo', '+237670334455', 0),
-(3, 'DJG-2026-MBR03', 'kamga_jp', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Jean-Paul Kamga', '+237677112233', 'jp.kamga@djangui.cm', 'CNI-LT-102938475', 'member', 'actif', 'momo', '+237677112233', 0),
-(4, 'DJG-2026-MBR04', 'eboue_nadine', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Nadine Eboué', '+237691445566', 'nadine.eboue@djangui.cm', 'CNI-LT-443322110', 'member', 'actif', 'om', '+237691445566', 0),
-(5, 'DJG-2026-MBR05', 'mbarga_paul', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Paul Mbarga', '+237655667788', 'paul.mbarga@djangui.cm', 'CNI-CE-112233445', 'member', 'actif', 'momo', '+237655667788', 0);
+INSERT INTO users (id, code_public, username, password_hash, nom_complet, telephone, email, numero_cni, role, statut_membre, canal_paiement, telephone_paiement) VALUES
+(1, 'DJG-2026-SEC01', 'ngono_secretaire', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Marie-Claire Ngono', '+237699223344', 'mc.ngono@djangui.cm', 'CNI-CE-554433221', 'admin', 'actif', 'om', '+237699223344'),
+(2, 'DJG-2026-MBR02', 'fotso_eric', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Éric Fotso', '+237670334455', 'eric.fotso@djangui.cm', 'CNI-OU-998877665', 'member', 'actif', 'momo', '+237670334455'),
+(3, 'DJG-2026-MBR03', 'kamga_jp', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Jean-Paul Kamga', '+237677112233', 'jp.kamga@djangui.cm', 'CNI-LT-102938475', 'member', 'actif', 'momo', '+237677112233'),
+(4, 'DJG-2026-MBR04', 'eboue_nadine', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Nadine Eboué', '+237691445566', 'nadine.eboue@djangui.cm', 'CNI-LT-443322110', 'member', 'actif', 'om', '+237691445566'),
+(5, 'DJG-2026-MBR05', 'mbarga_paul', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Paul Mbarga', '+237655667788', 'paul.mbarga@djangui.cm', 'CNI-CE-112233445', 'member', 'actif', 'momo', '+237655667788');
 
 -- 2. Tontine : Caisse de réserve à 7 500 FCFA (5 000 bonus + 2 500 pénalité réglée par Paul)
 INSERT INTO tontines (id, code_tontine, code_invitation, nom, description, ville, devise, solde_caisse_reserve, statut, date_debut_essai, date_fin_essai, statut_abonnement, abonnement_valide_jusqua, admin_id) VALUES
@@ -297,7 +297,7 @@ INSERT INTO cycle_members (id, cycle_id, user_id, rang_beneficiaire, date_prevue
 -- Séance 2 (Octobre)   : Le bouffeur est Marie-Claire, la Secrétaire (cycle_member_id = 2)
 INSERT INTO contributions (id, cycle_member_id, beneficiaire_cycle_member_id, numero_seance, date_echeance, montant_attendu, montant_paye, statut) VALUES
 (1, 1, 1, 1, '2026-09-05', 50000.00, 50000.00, 'paye'), -- Éric (sa propre part)
-(2, 2, 1, 1, '2026--09-05', 50000.00, 50000.00, 'paye'), -- Marie-Claire (Secrétaire) cotise pour Éric
+(2, 2, 1, 1, '2026-09-05', 50000.00, 50000.00, 'paye'), -- Marie-Claire (Secrétaire) cotise pour Éric
 (3, 3, 1, 1, '2026-09-05', 50000.00, 50000.00, 'paye'), -- Jean-Paul cotise pour Éric
 (4, 4, 1, 1, '2026-09-05', 50000.00, 50000.00, 'paye'), -- Nadine cotise pour Éric
 (5, 5, 1, 1, '2026-09-05', 50000.00, 50000.00, 'paye'), -- Paul (a payé 20 000 le 05/09 puis a remboursé 30 000 + 2 500 de pénalité le 12/09)
@@ -346,6 +346,5 @@ INSERT INTO admin_transfers (id, tontine_id, cycle_id, ancien_admin_id, nouvel_a
 (1, 1, 1, 3, 1, 1, 'Passation de la gestion et de la caisse de réserve de Jean-Paul Kamga à Marie-Claire Ngono à la fin du Cycle 1.', '2026-08-31 18:00:00');
 
 ALTER TABLE users
-ADD COLUMN statut_validation ENUM('en_attente', 'accepte')
-NOT NULL DEFAULT 'accepte'
-AFTER statut_membre;
+MODIFY COLUMN statut_validation ENUM('en_attente', 'accepte', 'refuse')
+NOT NULL DEFAULT 'accepte';
