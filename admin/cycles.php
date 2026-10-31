@@ -22,7 +22,7 @@ if ($tontine) {
 }
 
 // 2. Récupérer tous les membres actifs de la tontine (pour les inscrire à un nouveau cycle)
-$stmtMembres = $pdo->prepare("SELECT id, code_public, nom_complet, role, telephone FROM users WHERE tontine_id = ? AND statut_membre = 'actif' ORDER BY role ASC, nom_complet ASC");
+$stmtMembres = $pdo->prepare("SELECT id, code_public, nom_complet, role, telephone FROM users WHERE tontine_id = ? AND statut_membre = 'actif' AND statut_validation = 'accepte' ORDER BY role ASC, nom_complet ASC");
 $stmtMembres->execute([$tontine_id]);
 $membres_actifs = $stmtMembres->fetchAll();
 
@@ -69,11 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 };
                 $date_fin_prevue = date('Y-m-d', strtotime($date_debut . ' ' . $intervalle));
 
-                // Insertion du cycle en statut 'brouillon'
+                // Insertion du cycle en statut 'brouillon' (noms exacts des colonnes SQL)
                 $stmtInsert = $pdo->prepare("
                     INSERT INTO cycles (
                         tontine_id, numero_cycle, titre, montant_cotisation, frequence,
-                        jour_echeance, penalite_retard, date_debut, date_fin_prevue, statut, tirage_verrouille
+                        jour_limite_paiement, montant_penalite_retard, date_debut, date_fin, statut, tirage_verrouille
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', 0)
                 ");
                 $stmtInsert->execute([
@@ -364,7 +364,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     </div>
                                     <div class="col-6 col-sm-3">
                                         <span class="text-muted d-block">Pénalité retard</span>
-                                        <strong class="text-danger"><?= format_fcfa($c['penalite_retard']) ?></strong>
+                                        <strong class="text-danger"><?= format_fcfa($c['montant_penalite_retard']) ?></strong>
                                     </div>
                                 </div>
 

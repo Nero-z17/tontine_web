@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $upd = $pdo->prepare("
                     UPDATE users
                     SET password_hash = ?, reset_token = NULL, reset_expire_at = NULL,
-                        tentatives_echouees = 0, blocage_jusqua = NULL, doit_changer_mdp = 0
+                        tentatives_echouees = 0, blocage_jusqua = NULL
                     WHERE id = ?
                 ");
                 $upd->execute([$hash, $user['id']]);

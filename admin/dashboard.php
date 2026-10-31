@@ -50,15 +50,19 @@ if ($cycle) {
         $taux_cotisation = round(($montant_collecte / $montant_attendu) * 100, 2);
     }
 
-    // 4. Membres en retard / en règle pour la séance en cours
+    // 4. Déterminer la séance active (1re séance ayant encore des cotisations non soldées, sinon la dernière)
     $stmtDerniereSeance = $pdo->prepare("
-        SELECT MAX(c.numero_seance) AS max_numero
+        SELECT COALESCE(
+            MIN(CASE WHEN c.montant_paye < c.montant_attendu THEN c.numero_seance END),
+            MAX(c.numero_seance)
+        ) AS seance_courante
         FROM contributions c
         INNER JOIN cycle_members cm ON cm.id = c.cycle_member_id
         WHERE cm.cycle_id = ?
     ");
     $stmtDerniereSeance->execute([$cycle_id]);
     $derniereSeance = (int)($stmtDerniereSeance->fetchColumn() ?? 0);
+    
 
     if ($derniereSeance > 0) {
         $stmtRetards = $pdo->prepare("

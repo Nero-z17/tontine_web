@@ -146,27 +146,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
-    // ── Ventilation financière selon le pourcentage configuré ──
-    $montant_cotisation = (float)$cotisation['montant_attendu'];
+    // ── Ventilation financière sur le RESTE À PAYER (gère les paiements partiels) ──
+    $montant_cotisation = max(0.0, (float)$cotisation['montant_attendu'] - (float)$cotisation['montant_paye']);
     $date_echeance      = $cotisation['date_echeance'];
     $aujourdhui         = date('Y-m-d');
-    $est_en_retard      = (strtotime($date_echeance) < strtotime($aujourdhui));
+    $est_en_retard      = (strtotime($date_echeance) < strtotime($aujourdhui)) || ($cotisation['statut'] === 'en_retard');
 
     if ($est_en_retard) {
-        // En retard : Cotisation normale au bouffeur + pénalité (%) à la caisse de réserve
-        $penalite_appliquee  = round($montant_cotisation * ($pourcentage_penalite / 100));
+        $penalite_appliquee  = round((float)$cotisation['montant_attendu'] * ($pourcentage_penalite / 100));
         $part_beneficiaire   = $montant_cotisation;
         $part_caisse_reserve = $penalite_appliquee;
         $montant_total       = $part_beneficiaire + $part_caisse_reserve;
     } else {
-        // À l'heure : 100% au bouffeur du tour
         $part_beneficiaire   = $montant_cotisation;
         $part_caisse_reserve = 0.00;
         $montant_total       = $montant_cotisation;
     }
 
     $prefixe = strtoupper($mode_paiement);
-    $ref_paiement = $prefixe . date('ymd') . '.' . str_pad((string)$contribution_id, 3, '0', STR_PAD_LEFT);
+    $ref_paiement = $prefixe . date('ymd') . '.' . str_pad((string)$contribution_id, 3, '0', STR_PAD_LEFT) . '.' . random_int(10, 99);
 
     // ── Transaction atomique SQL ──
     try {
@@ -190,7 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $mode_paiement,
             $ref_paiement,
             $est_en_retard ? 1 : 0,
-            $est_en_retard ? "Paiement en retard (pénalité {$pourcentage_penalite}%)" : 'Paiement à échéance'
+            $est_en_retard ? "Régularisation retard (pénalité {$pourcentage_penalite}%)" : 'Paiement à échéance'
         ]);
 
         // 2. Mise à jour de la table contributions
@@ -201,15 +199,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         ");
         $stmtUpdateContrib->execute([$contribution_id]);
 
-        // 3. Créditer le pot du bouffeur
+        // 3. Créditer le pot du bouffeur et marquer pot_totalement_recu = 1 si complet
         $stmtUpdatePot = $pdo->prepare("
             UPDATE cycle_members 
-            SET montant_pot_recu = montant_pot_recu + ?
+            SET montant_pot_recu = montant_pot_recu + ?,
+                pot_totalement_recu = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu THEN 1 ELSE 0 END,
+                date_reception_pot = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu AND date_reception_pot IS NULL THEN NOW() ELSE date_reception_pot END
             WHERE id = ?
         ");
-        $stmtUpdatePot->execute([$part_beneficiaire, (int)$cotisation['beneficiaire_cycle_member_id']]);
+        $stmtUpdatePot->execute([
+            $part_beneficiaire,
+            $part_beneficiaire,
+            $part_beneficiaire,
+            (int)$cotisation['beneficiaire_cycle_member_id']
+        ]);
 
-        // 4. Si pénalité, alimenter la caisse de réserve
+        // 4. Si pénalité, alimenter la caisse de réserve et synchroniser la table penalties
         if ($part_caisse_reserve > 0) {
             $stmtUpdateCaisse = $pdo->prepare("
                 UPDATE tontines 
@@ -217,6 +222,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 WHERE id = ?
             ");
             $stmtUpdateCaisse->execute([$part_caisse_reserve, $tontine_id]);
+
+            // Marquer la pénalité existante comme réglée ou en créer la trace réglée
+            $stmtCheckPen = $pdo->prepare("SELECT id FROM penalties WHERE contribution_id = ? AND statut = 'en_attente' LIMIT 1");
+            $stmtCheckPen->execute([$contribution_id]);
+            $pen_id = $stmtCheckPen->fetchColumn();
+
+            if ($pen_id) {
+                $stmtUpdPen = $pdo->prepare("UPDATE penalties SET statut = 'regle', montant = ?, date_reglement = NOW() WHERE id = ?");
+                $stmtUpdPen->execute([$part_caisse_reserve, (int)$pen_id]);
+            } else {
+                $stmtInsPen = $pdo->prepare("
+                    INSERT INTO penalties (cycle_member_id, contribution_id, type_operation, montant, motif, statut, date_operation, date_reglement, auteur_id)
+                    VALUES (?, ?, 'penalite', ?, ?, 'regle', NOW(), NOW(), ?)
+                ");
+                $stmtInsPen->execute([
+                    (int)$mon_cycle_member['id'],
+                    $contribution_id,
+                    $part_caisse_reserve,
+                    "Pénalité de retard réglée lors du paiement de la Séance #{$cotisation['numero_seance']}",
+                    $user_id
+                ]);
+            }
         }
 
         $pdo->commit();

@@ -62,23 +62,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             try {
                 $pdo->beginTransaction();
 
+                // Réinitialisation préalable des rangs pour éviter tout conflit sur l'index UNIQUE (cycle_id, rang_beneficiaire)
+                $stmtResetRang = $pdo->prepare("UPDATE cycle_members SET rang_beneficiaire = NULL, date_prevue_pot = NULL WHERE cycle_id = ?");
+                $stmtResetRang->execute([$cycle_id_post]);
+
                 // Mélange aléatoire équitable des participants
                 shuffle($participants);
 
                 $montant_cotis = (float)$cycle_tirage['montant_cotisation'];
                 $pot_attendu   = $montant_cotis * $nb;
-
-                $stmtUpdateRang = $pdo->prepare("
-                    UPDATE cycle_members
-                    SET rang_beneficiaire = ?, montant_pot_attendu = ?
-                    WHERE id = ?
-                ");
-
-                foreach ($participants as $index => $p) {
-                    $rang = $index + 1;
-                    $stmtUpdateRang->execute([$rang, $pot_attendu, (int)$p['id']]);
-                    $participants[$index]['rang'] = $rang;
-                }
+                $date_base     = $cycle_tirage['date_debut'];
+                $frequence     = $cycle_tirage['frequence'];
 
                 // Nettoyage de sécurité des cotisations non payées si un brouillon existait
                 $stmtClean = $pdo->prepare("
@@ -88,7 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 ");
                 $stmtClean->execute([$cycle_id_post]);
 
-                // Génération automatique des séances de cotisation (Sans colonne cycle_id dans contributions)
+                $stmtUpdateRang = $pdo->prepare("
+                    UPDATE cycle_members
+                    SET rang_beneficiaire = ?, date_prevue_pot = ?, montant_pot_attendu = ?
+                    WHERE id = ?
+                ");
+
                 $stmtInsertCotis = $pdo->prepare("
                     INSERT INTO contributions (
                         cycle_member_id, beneficiaire_cycle_member_id,
@@ -96,13 +95,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     ) VALUES (?, ?, ?, ?, ?, 0.00, 'en_attente')
                 ");
 
-                $date_base = $cycle_tirage['date_debut'];
-                $frequence = $cycle_tirage['frequence'];
-
                 foreach ($participants as $seance_index => $beneficiaire) {
-                    $numero_seance = $seance_index + 1;
+                    $rang          = $seance_index + 1;
+                    $numero_seance = $rang;
 
-                    // Calcul de la date d'échéance de chaque séance
                     if ($seance_index === 0) {
                         $date_echeance = $date_base;
                     } else {
@@ -114,7 +110,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $date_echeance = date('Y-m-d', strtotime($date_base . ' ' . $decalage));
                     }
 
-                    // Chaque membre du cycle doit cotiser pour le bénéficiaire ("bouffeur") de cette séance
+                    // Mise à jour du rang ET de la date prévue du pot du bouffeur
+                    $stmtUpdateRang->execute([$rang, $date_echeance, $pot_attendu, (int)$beneficiaire['id']]);
+
+                    // Chaque membre du cycle cotise pour le bouffeur de cette séance
                     foreach ($participants as $cotisant) {
                         $stmtInsertCotis->execute([
                             (int)$cotisant['id'],
@@ -126,9 +125,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                 }
 
-                // Verrouillage définitif du tirage au sort sur le cycle
-                $stmtLock = $pdo->prepare("UPDATE cycles SET tirage_verrouille = 1 WHERE id = ?");
-                $stmtLock->execute([$cycle_id_post]);
+                // Verrouillage définitif du tirage au sort avec date et auteur
+                $stmtLock = $pdo->prepare("
+                    UPDATE cycles
+                    SET tirage_verrouille = 1, date_tirage = NOW(), auteur_tirage_id = ?
+                    WHERE id = ?
+                ");
+                $stmtLock->execute([(int)$_SESSION['user_id'], $cycle_id_post]);
 
                 $pdo->commit();
                 message_flash('success', 'Tirage au sort effectué et verrouillé avec succès ! Toutes les séances de cotisation ont été générées.');
