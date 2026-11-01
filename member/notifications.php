@@ -25,7 +25,7 @@ $stmtCotisations = $pdo->prepare("
 $stmtCotisations->execute([$user_id, $tontine_id]);
 
 foreach ($stmtCotisations->fetchAll() as $cotisation) {
-    $en_retard = $cotisation['date_echeance'] < date('Y-m-d');
+    $en_retard = $cotisation['date_echeance'] < date_actuelle('Y-m-d');
     $reste_a_payer = max(0, (float)$cotisation['montant_attendu'] - (float)$cotisation['montant_paye']);
     $alertes[] = [
         'type' => $en_retard ? 'danger' : 'warning',

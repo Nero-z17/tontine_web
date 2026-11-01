@@ -108,7 +108,7 @@ $pot_recu        = $mon_cycle_member ? (float)$mon_cycle_member['montant_pot_rec
 $pot_attendu     = $mon_cycle_member ? (float)$mon_cycle_member['montant_pot_attendu'] : 0.0;
 $pct_pot         = ($pot_attendu > 0) ? round(($pot_recu / $pot_attendu) * 100) : 0;
 $pct_cotisations = ($nb_total_seances > 0) ? round(($nb_payees / $nb_total_seances) * 100) : 0;
-$est_en_retard   = ($prochaine_cotisation && strtotime($prochaine_cotisation['date_echeance']) < strtotime(date('Y-m-d')));
+$est_en_retard = ($prochaine_cotisation && strtotime($prochaine_cotisation['date_echeance']) < strtotime(date_actuelle('Y-m-d')));
 
 $titre_page = "Mon Tableau de Bord";
 require_once __DIR__ . '/../includes/header.php';

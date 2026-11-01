@@ -99,18 +99,27 @@ if ($cycle) {
             c.statut AS statut_contrib,
             u_mem.nom_complet AS mem_nom,
             u_ben.nom_complet AS ben_nom,
-            p.id AS payment_id,
-            p.montant_total,
-            p.part_beneficiaire,
-            p.part_caisse_reserve,
-            p.mode_paiement,
-            p.date_paiement
+            p_agg.montant_total,
+            p_agg.part_beneficiaire,
+            p_agg.part_caisse_reserve,
+            p_agg.mode_paiement,
+            p_agg.date_paiement
         FROM contributions c
         JOIN cycle_members cm_payeur ON cm_payeur.id = c.cycle_member_id
         JOIN users u_mem ON u_mem.id = cm_payeur.user_id
         JOIN cycle_members cm_ben ON cm_ben.id = c.beneficiaire_cycle_member_id
         JOIN users u_ben ON u_ben.id = cm_ben.user_id
-        LEFT JOIN payments p ON p.contribution_id = c.id AND p.statut_paiement = 'valide'
+        LEFT JOIN (
+            SELECT contribution_id,
+                   SUM(montant_total) AS montant_total,
+                   SUM(part_beneficiaire) AS part_beneficiaire,
+                   SUM(part_caisse_reserve) AS part_caisse_reserve,
+                   MAX(mode_paiement) AS mode_paiement,
+                   MAX(date_paiement) AS date_paiement
+            FROM payments
+            WHERE statut_paiement = 'valide'
+            GROUP BY contribution_id
+        ) p_agg ON p_agg.contribution_id = c.id
         WHERE cm_payeur.cycle_id = ?
     ";
     $params = [(int)$cycle['id']];
@@ -125,7 +134,7 @@ if ($cycle) {
     $stmtCotis->execute($params);
     $lignes = $stmtCotis->fetchAll();
 
-    $aujourdhui = date('Y-m-d');
+    $aujourdhui = date_actuelle('Y-m-d');
     foreach ($lignes as $l) {
         // Détermination du statut dynamique
         $st = 'en_attente';
