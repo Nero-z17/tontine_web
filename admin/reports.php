@@ -253,7 +253,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                             <th>Rang</th>
                             <th>Membre</th>
                             <th>Total Cotisé</th>
-                            <th>Dette de cotisation</th>
+                            <th>Restant à cotiser dans le cycle</th>
                             <th>Pot Reçu (Bouffe)</th>
                             <th>Pénalités & Bonus</th>
                         </tr>

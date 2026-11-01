@@ -47,7 +47,7 @@ require_once __DIR__ . '/includes/navbar.php';
             <div class="card card-djangui hover-lift h-100 p-4 border-left-warning">
                 <h5 class="fw-bold text-warning-emphasis"><i class="bi bi-3-circle-fill me-2"></i>Cycles successifs, Tirage au sort & Passation</h5>
                 <ul class="text-muted small mb-0 ps-3">
-                    <li class="mb-2">Chaque cycle possède son montant, sa fréquence, son jour limite de paiement et ses règles de pénalité.</li>
+                    <li class="mb-2">Chaque cycle possède son montant, sa fréquence, sa date de lancement et son taux de pénalité en pourcentage.</li>
                     <li class="mb-2">Le tirage au sort aléatoire attribue un rang unique à chaque participant du cycle et <strong>se verrouille définitivement</strong> pour empêcher toute modification silencieuse.</li>
                     <li class="mb-2">À la fin d'un cycle, la secrétaire peut clôturer le cycle, consulter le bilan, ouvrir un nouveau cycle sans effacer l'historique, ou transférer atomiquement le rôle d'administrateur à un autre membre éligible.</li>
                 </ul>
@@ -56,11 +56,11 @@ require_once __DIR__ . '/includes/navbar.php';
 
         <div class="col-md-6">
             <div class="card card-djangui hover-lift h-100 p-4 border-left-danger">
-                <h5 class="fw-bold text-danger"><i class="bi bi-4-circle-fill me-2"></i>Sécurité, Carte QR Code & Protection CNI</h5>
+                <h5 class="fw-bold text-danger"><i class="bi bi-4-circle-fill me-2"></i>Sécurité des Comptes & Protection de la CNI</h5>
                 <ul class="text-muted small mb-0 ps-3">
                     <li class="mb-2"><strong>Mots de passe :</strong> hachés avec <code>password_hash()</code> et protégés contre le forçage par blocage automatique après 5 échecs.</li>
                     <li class="mb-2"><strong>Confidentialité de la CNI :</strong> le numéro de CNI est une donnée sensible strictement réservée à la vérification par l'administrateur. Il n'est jamais affiché aux autres membres.</li>
-                    <li><strong>QR Code sécurisé :</strong> la carte de membre QR Code contient uniquement l'identifiant public (<code>code_public</code>) et ne stocke jamais de mot de passe ni de numéro de CNI.</li>
+                    <li><strong>Compensation automatique :</strong> les dettes ou pénalités éventuelles d'un membre sont automatiquement retenues lorsque son tour de bouffer arrive.</li>
                 </ul>
             </div>
         </div>

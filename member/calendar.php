@@ -45,6 +45,7 @@ $ma_date_bouffe = null;
 
 if ($cycle_courant) {
     $cycle_id = (int)$cycle_courant['id'];
+    $seance_max_ouverte = ($cycle_courant['statut'] === 'actif') ? obtenir_seance_ouverte_max($pdo, $cycle_id) : 9999;
 
     $stmtMe = $pdo->prepare("
         SELECT * FROM cycle_members 
@@ -338,7 +339,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     </td>
                                     <td>
                                         <div class="fw-semibold">
-                                            <i class="bi bi-calendar-event text-primary me-1"></i><?= date('d/m/Y', $date_ts) ?>
+                                            <i class="bi bi-calendar-event text-primary me-1"></i><?= e(formater_periode_seance($cycle_courant['date_debut'], $num, $cycle_courant['frequence'], $seance['date_echeance'])) ?>
                                         </div>
                                         <span class="small text-muted">
                                             <?= $est_passee ? 'Échéance passée' : 'Échéance à venir' ?>
@@ -386,7 +387,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-end">
-                                        <?php if ($ma_cotis && $ma_cotis['statut'] !== 'paye'): ?>
+                                        <?php if ($ma_cotis && $ma_cotis['statut'] !== 'paye' && $num <= ($seance_max_ouverte ?? 9999)): ?>
                                             <a href="<?= BASE_URL ?>/member/contributions.php?seance=<?= $num ?>" class="btn btn-sm btn-glow-emerald">
                                                 <i class="bi bi-wallet2 me-1"></i>Cotiser
                                             </a>
@@ -433,7 +434,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     <?php endif; ?>
                                 </div>
                                 <span class="small fw-semibold text-primary">
-                                    <i class="bi bi-calendar-event me-1"></i><?= date('d/m/Y', strtotime($seance['date_echeance'])) ?>
+                                    <i class="bi bi-calendar-event me-1"></i><?= e(formater_periode_seance($cycle_courant['date_debut'], $num, $cycle_courant['frequence'], $seance['date_echeance'])) ?>
                                 </span>
                             </div>
 

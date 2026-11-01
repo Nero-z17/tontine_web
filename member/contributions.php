@@ -4,114 +4,53 @@
  * MEMBRE 3 : member/contributions.php
  * =============================================================================
  * Liste des cotisations du membre connecté et paiement avec :
- *  - Prise en compte dynamique du POURCENTAGE de la pénalité de retard
- *  - Possibilité pour l'administrateur / secrétaire de MODIFIER ce pourcentage
- *    directement depuis son espace
- *  - Ventilation financière automatique :
- *      * Cas 1 (Normal)    : 100% au bouffeur de la séance
- *      * Cas 2 (En retard) : Cotisation au bouffeur + Pénalité (%) à la caisse de réserve
- *  - Transaction atomique SQL ($pdo->beginTransaction) :
- *      1. payments (paye_par_user_id, part_beneficiaire, part_caisse_reserve, est_en_retard)
- *      2. contributions (montant_paye, statut)
- *      3. cycle_members (montant_pot_recu du bouffeur)
- *      4. tontines (solde_caisse_reserve)
- *
- * Tables SQL : cycles, cycle_members, contributions, payments, tontines, users
+ *  - Point 1 : Verrouillage séquentiel (impossible de cotiser la séance N tant que N-1 n'est pas clôturée)
+ *  - Point 2 : Taux de pénalité centralisé (pas de formulaire en doublon ici)
+ *  - Point 4 : Choix libre du montant exact à payer (plafonné à cotisation restante + dettes et pénalités)
+ *  - Point 5 : La propre part du bouffeur est automatiquement compensée sur son pot
+ *  - Point 10 : Affichage des plages de dates exactes par séance
  * =============================================================================
  */
 
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-// Sécurité : connexion obligatoire
 verifier_connexion();
 
 $tontine_id = (int)$_SESSION['tontine_id'];
 $user_id    = (int)$_SESSION['user_id'];
 $est_admin  = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
 
-// ══════════════════════════════════════════════════════════════════════════════
 // 1. CYCLE ACTIF & PARTICIPATION DU MEMBRE
-// ══════════════════════════════════════════════════════════════════════════════
 $stmtCycle = $pdo->prepare("SELECT * FROM cycles WHERE tontine_id = ? AND statut = 'actif' LIMIT 1");
 $stmtCycle->execute([$tontine_id]);
 $cycle = $stmtCycle->fetch();
 
-$mon_cycle_member = null;
+$mon_cycle_member   = null;
+$seance_max_ouverte = 1;
+
 if ($cycle) {
+    $cid = (int)$cycle['id'];
+    $seance_max_ouverte = obtenir_seance_ouverte_max($pdo, $cid);
+
     $stmtCM = $pdo->prepare("SELECT * FROM cycle_members WHERE cycle_id = ? AND user_id = ? LIMIT 1");
-    $stmtCM->execute([(int)$cycle['id'], $user_id]);
+    $stmtCM->execute([$cid, $user_id]);
     $mon_cycle_member = $stmtCM->fetch();
 }
 
-// Calcul du pourcentage et du montant de pénalité en vigueur sur le cycle
 $montant_cotis_cycle = $cycle ? (float)$cycle['montant_cotisation'] : 0.0;
 $penalite_montant    = $cycle ? (float)($cycle['montant_penalite_retard'] ?? 0) : 0.0;
+$pourcentage_penalite = ($cycle && $montant_cotis_cycle > 0)
+    ? round(($penalite_montant / $montant_cotis_cycle) * 100, 1)
+    : 0.0;
 
-// Si un montant existe en BDD, on déduit le pourcentage correspondant ; sinon 10% par défaut
-if ($cycle && $montant_cotis_cycle > 0) {
-    if ($penalite_montant > 0) {
-        $pourcentage_penalite = round(($penalite_montant / $montant_cotis_cycle) * 100, 1);
-    } else {
-        $pourcentage_penalite = 10.0;
-        $penalite_montant     = round($montant_cotis_cycle * 0.10);
-    }
-} else {
-    $pourcentage_penalite = 10.0;
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// 2. ACTION ADMIN : MODIFIER LE POURCENTAGE DE LA PÉNALITÉ
-// ══════════════════════════════════════════════════════════════════════════════
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'modifier_pourcentage_penalite') {
-    verifier_csrf();
-
-    if (!$est_admin) {
-        message_flash('danger', 'Action refusée : réservée à l\'administrateur.');
-        header('Location: ' . BASE_URL . '/member/contributions.php');
-        exit;
-    }
-
-    if (!$cycle) {
-        message_flash('danger', 'Impossible de modifier la pénalité : aucun cycle actif.');
-        header('Location: ' . BASE_URL . '/member/contributions.php');
-        exit;
-    }
-
-    $nouveau_pourcentage = filter_var($_POST['pourcentage_penalite'] ?? null, FILTER_VALIDATE_FLOAT);
-
-    if ($nouveau_pourcentage === false || $nouveau_pourcentage < 0 || $nouveau_pourcentage > 100) {
-        message_flash('danger', 'Veuillez saisir un pourcentage valide (entre 0% et 100%).');
-    } else {
-        try {
-            // Conversion du pourcentage en montant FCFA pour la table cycles
-            $nouveau_montant_penalite = round($montant_cotis_cycle * ($nouveau_pourcentage / 100));
-
-            $stmtUpdate = $pdo->prepare("
-                UPDATE cycles 
-                SET montant_penalite_retard = ? 
-                WHERE id = ? AND tontine_id = ?
-            ");
-            $stmtUpdate->execute([$nouveau_montant_penalite, (int)$cycle['id'], $tontine_id]);
-
-            message_flash('success', "Le taux de pénalité de retard a été fixé à {$nouveau_pourcentage}% (soit " . format_fcfa($nouveau_montant_penalite) . " par cotisation en retard).");
-        } catch (PDOException $e) {
-            message_flash('danger', 'Erreur lors de la mise à jour : ' . $e->getMessage());
-        }
-    }
-
-    header('Location: ' . BASE_URL . '/member/contributions.php');
-    exit;
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// 3. ACTION MEMBRE : TRAITEMENT D'UN PAIEMENT (POST)
-// ══════════════════════════════════════════════════════════════════════════════
+// 2. ACTION MEMBRE : TRAITEMENT D'UN PAIEMENT AU MONTANT CHOISI (POINTS 1, 4, 5)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'payer_cotisation' && $cycle && $mon_cycle_member) {
     verifier_csrf();
 
     $contribution_id = (int)($_POST['contribution_id'] ?? 0);
     $mode_paiement   = trim($_POST['mode_paiement'] ?? '');
+    $montant_saisi   = filter_var($_POST['montant_saisi'] ?? null, FILTER_VALIDATE_FLOAT);
 
     $modes_autorises = ['momo', 'om', 'especes'];
     if (!in_array($mode_paiement, $modes_autorises, true)) {
@@ -120,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
-    // Récupérer la cotisation du membre
+    // Récupérer la cotisation ciblée du membre
     $stmtVerif = $pdo->prepare("
         SELECT c.*, cm_bouffeur.user_id AS bouffeur_user_id
         FROM contributions c
@@ -140,118 +79,248 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
+    $num_seance = (int)$cotisation['numero_seance'];
+
+    // POINT 1 : Interdire le paiement d'une séance si la séance précédente n'est pas encore clôturée
+    if ($num_seance > $seance_max_ouverte) {
+        message_flash('danger', "Action refusée : vous ne pouvez pas cotiser pour la Séance #{$num_seance} tant que la Séance #" . ($num_seance - 1) . " n'est pas clôturée.");
+        header('Location: ' . BASE_URL . '/member/contributions.php');
+        exit;
+    }
+
+    // Vérifier aussi que le membre n'a pas laissé une séance antérieure (< $num_seance) totalement impayée sans la régler d'abord
+    $stmtDettesAnt = $pdo->prepare("
+        SELECT COALESCE(SUM(montant_attendu - montant_paye), 0)
+        FROM contributions
+        WHERE cycle_member_id = ?
+          AND beneficiaire_cycle_member_id != ?
+          AND numero_seance < ?
+          AND montant_paye < montant_attendu
+    ");
+    $stmtDettesAnt->execute([(int)$mon_cycle_member['id'], (int)$mon_cycle_member['id'], $num_seance]);
+    $dettes_anterieures = (float)$stmtDettesAnt->fetchColumn();
+
     if ($cotisation['statut'] === 'paye' || (float)$cotisation['montant_paye'] >= (float)$cotisation['montant_attendu']) {
         message_flash('warning', 'Vous avez déjà entièrement réglé cette cotisation.');
         header('Location: ' . BASE_URL . '/member/contributions.php');
         exit;
     }
 
-    // ── Ventilation financière sur le RESTE À PAYER (gère les paiements partiels) ──
-    $montant_cotisation = max(0.0, (float)$cotisation['montant_attendu'] - (float)$cotisation['montant_paye']);
-    $date_echeance      = $cotisation['date_echeance'];
-    $aujourdhui         = date_actuelle('Y-m-d');
-    $est_en_retard      = (strtotime($date_echeance) < strtotime($aujourdhui)) || ($cotisation['statut'] === 'en_retard');
+    // Calcul du reste à cotiser sur cette séance et de la pénalité en attente éventuelle (Point 4)
+    $reste_cotisation = max(0.0, (float)$cotisation['montant_attendu'] - (float)$cotisation['montant_paye']);
+    $date_echeance    = $cotisation['date_echeance'];
+    $aujourdhui       = date_actuelle('Y-m-d');
+    $est_en_retard    = ((int)$cotisation['cycle_member_id'] !== (int)$cotisation['beneficiaire_cycle_member_id'])
+                        && ((strtotime($date_echeance) < strtotime($aujourdhui)) || ($cotisation['statut'] === 'en_retard'));
 
-    if ($est_en_retard) {
-        $penalite_appliquee  = round((float)$cotisation['montant_attendu'] * ($pourcentage_penalite / 100));
-        $part_beneficiaire   = $montant_cotisation;
-        $part_caisse_reserve = $penalite_appliquee;
-        $montant_total       = $part_beneficiaire + $part_caisse_reserve;
-    } else {
-        $part_beneficiaire   = $montant_cotisation;
-        $part_caisse_reserve = 0.00;
-        $montant_total       = $montant_cotisation;
+    // Vérifier le montant exact de la pénalité encore en attente sur cette séance (ou toutes pénalités en attente du membre)
+    $stmtPenDue = $pdo->prepare("
+        SELECT id, montant
+        FROM penalties
+        WHERE cycle_member_id = ?
+          AND (contribution_id = ? OR contribution_id IS NULL)
+          AND type_operation = 'penalite'
+          AND statut = 'en_attente'
+        ORDER BY (contribution_id = ?) DESC, id ASC
+    ");
+    $stmtPenDue->execute([(int)$mon_cycle_member['id'], $contribution_id, $contribution_id]);
+    $penalites_attente = $stmtPenDue->fetchAll();
+
+    $total_penalites_dues = 0.0;
+    foreach ($penalites_attente as $pa) {
+        $total_penalites_dues += (float)$pa['montant'];
+    }
+    if ($est_en_retard && $total_penalites_dues == 0.0 && $penalite_montant > 0) {
+        // Vérifier qu'elle n'a pas déjà été réglée ou annulée
+        $stmtDejaReglee = $pdo->prepare("SELECT id FROM penalties WHERE contribution_id = ? AND statut IN ('regle', 'annule') LIMIT 1");
+        $stmtDejaReglee->execute([$contribution_id]);
+        if (!$stmtDejaReglee->fetchColumn()) {
+            $total_penalites_dues = $penalite_montant;
+        }
     }
 
-    $prefixe = strtoupper($mode_paiement);
-    $ref_paiement = $prefixe . date('ymd') . '.' . str_pad((string)$contribution_id, 3, '0', STR_PAD_LEFT) . '.' . random_int(10, 99);
+    // Plafond maximal autorisé (Point 4 : cotisation de la séance + dettes antérieures + pénalités)
+    $plafond_max = round($reste_cotisation + $dettes_anterieures + $total_penalites_dues, 2);
 
-    // ── Transaction atomique SQL ──
+    if ($montant_saisi === false || $montant_saisi <= 0) {
+        message_flash('danger', 'Veuillez saisir un montant à payer supérieur à 0 FCFA.');
+        header('Location: ' . BASE_URL . '/member/contributions.php');
+        exit;
+    }
+
+    if ($montant_saisi > $plafond_max + 0.01) {
+        message_flash('danger', 'Montant refusé : vous ne pouvez pas payer plus que le total dû (' . format_fcfa($plafond_max) . ').');
+        header('Location: ' . BASE_URL . '/member/contributions.php');
+        exit;
+    }
+
+    $montant_disponible = round((float)$montant_saisi, 2);
+
     try {
         $pdo->beginTransaction();
 
-        // 1. Insertion du reçu de paiement
-        $stmtPay = $pdo->prepare("
-            INSERT INTO payments (
-                contribution_id, paye_par_user_id, montant_total,
-                part_beneficiaire, part_caisse_reserve, mode_paiement,
-                reference_paiement, date_paiement, est_en_retard,
-                statut_paiement, commentaire
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'valide', ?)
-        ");
-        $stmtPay->execute([
-            $contribution_id,
-            $user_id,
-            $montant_total,
-            $part_beneficiaire,
-            $part_caisse_reserve,
-            $mode_paiement,
-            $ref_paiement,
-            $est_en_retard ? 1 : 0,
-            $est_en_retard ? "Régularisation retard (pénalité {$pourcentage_penalite}%)" : 'Paiement à échéance'
-        ]);
+        $prefixe = strtoupper($mode_paiement);
+        $total_vers_bouffeurs = 0.0;
+        $total_vers_caisse    = 0.0;
 
-        // 2. Mise à jour de la table contributions
-        $stmtUpdateContrib = $pdo->prepare("
-            UPDATE contributions 
-            SET montant_paye = montant_attendu, statut = 'paye'
-            WHERE id = ?
-        ");
-        $stmtUpdateContrib->execute([$contribution_id]);
+        // ÉTAPE 1 : Si le membre avait des dettes de cotisations antérieures et paie un montant qui les couvre,
+        //           ou s'il règle d'abord la séance sélectionnée :
+        //           On affecte d'abord à la cotisation de la séance sélectionnée (jusqu'à $reste_cotisation)
+        $part_seance_courante = min($montant_disponible, $reste_cotisation);
+        $montant_disponible   = round($montant_disponible - $part_seance_courante, 2);
 
-        // 3. Créditer le pot du bouffeur et marquer pot_totalement_recu = 1 si complet
-        $stmtUpdatePot = $pdo->prepare("
-            UPDATE cycle_members 
-            SET montant_pot_recu = montant_pot_recu + ?,
-                pot_totalement_recu = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu THEN 1 ELSE 0 END,
-                date_reception_pot = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu AND date_reception_pot IS NULL THEN NOW() ELSE date_reception_pot END
-            WHERE id = ?
-        ");
-        $stmtUpdatePot->execute([
-            $part_beneficiaire,
-            $part_beneficiaire,
-            $part_beneficiaire,
-            (int)$cotisation['beneficiaire_cycle_member_id']
-        ]);
+        // Si le membre a saisi plus que la séance courante et qu'il avait des dettes de séances précédentes, on les solde
+        if ($montant_disponible > 0 && $dettes_anterieures > 0) {
+            $stmtOld = $pdo->prepare("
+                SELECT id, beneficiaire_cycle_member_id, numero_seance, montant_attendu, montant_paye
+                FROM contributions
+                WHERE cycle_member_id = ?
+                  AND beneficiaire_cycle_member_id != ?
+                  AND numero_seance < ?
+                  AND montant_paye < montant_attendu
+                ORDER BY numero_seance ASC
+            ");
+            $stmtOld->execute([(int)$mon_cycle_member['id'], (int)$mon_cycle_member['id'], $num_seance]);
 
-        // 4. Si pénalité, alimenter la caisse de réserve et synchroniser la table penalties
-        if ($part_caisse_reserve > 0) {
-            $stmtUpdateCaisse = $pdo->prepare("
-                UPDATE tontines 
-                SET solde_caisse_reserve = solde_caisse_reserve + ?
+            foreach ($stmtOld->fetchAll() as $oldCo) {
+                if ($montant_disponible <= 0) {
+                    break;
+                }
+                $reste_old = max(0.0, (float)$oldCo['montant_attendu'] - (float)$oldCo['montant_paye']);
+                $paye_old  = min($montant_disponible, $reste_old);
+
+                if ($paye_old > 0) {
+                    $nv_paye_old   = (float)$oldCo['montant_paye'] + $paye_old;
+                    $nv_statut_old = ($nv_paye_old >= (float)$oldCo['montant_attendu']) ? 'paye' : 'en_retard';
+
+                    $pdo->prepare("UPDATE contributions SET montant_paye = ?, statut = ? WHERE id = ?")
+                        ->execute([$nv_paye_old, $nv_statut_old, (int)$oldCo['id']]);
+
+                    $pdo->prepare("
+                        UPDATE cycle_members
+                        SET montant_pot_recu = montant_pot_recu + ?,
+                            pot_totalement_recu = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu THEN 1 ELSE 0 END,
+                            date_reception_pot = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu AND date_reception_pot IS NULL THEN NOW() ELSE date_reception_pot END
+                        WHERE id = ?
+                    ")->execute([$paye_old, $paye_old, $paye_old, (int)$oldCo['beneficiaire_cycle_member_id']]);
+
+                    $ref_old = $prefixe . date('ymd') . '.' . str_pad((string)$oldCo['id'], 3, '0', STR_PAD_LEFT) . '.' . random_int(10, 99);
+                    $pdo->prepare("
+                        INSERT INTO payments (
+                            contribution_id, paye_par_user_id, montant_total,
+                            part_beneficiaire, part_caisse_reserve, mode_paiement,
+                            reference_paiement, date_paiement, est_en_retard,
+                            statut_paiement, commentaire
+                        ) VALUES (?, ?, ?, ?, 0.00, ?, ?, NOW(), 1, 'valide', ?)
+                    ")->execute([
+                        (int)$oldCo['id'],
+                        $user_id,
+                        $paye_old,
+                        $paye_old,
+                        $mode_paiement,
+                        $ref_old,
+                        "Règlement dette antérieure (Séance #{$oldCo['numero_seance']})"
+                    ]);
+
+                    $total_vers_bouffeurs += $paye_old;
+                    $montant_disponible    = round($montant_disponible - $paye_old, 2);
+                }
+            }
+        }
+
+        // ÉTAPE 2 : Le surplus éventuel (jusqu'à $total_penalites_dues) règle les pénalités vers la Caisse de réserve
+        $part_caisse_reserve = min($montant_disponible, $total_penalites_dues);
+        $total_seance_et_pen = round($part_seance_courante + $part_caisse_reserve, 2);
+
+        if ($total_seance_et_pen > 0) {
+            $ref_paiement = $prefixe . date('ymd') . '.' . str_pad((string)$contribution_id, 3, '0', STR_PAD_LEFT) . '.' . random_int(10, 99);
+            $nouveau_montant_paye = round((float)$cotisation['montant_paye'] + $part_seance_courante, 2);
+            $est_soldee = ($nouveau_montant_paye >= (float)$cotisation['montant_attendu'] - 0.01);
+            $nouveau_statut_co = $est_soldee ? 'paye' : ($est_en_retard ? 'en_retard' : 'partiel');
+
+            $commentaire = $est_soldee
+                ? ($est_en_retard ? "Solde cotisation en retard" : "Paiement cotisation Séance #{$num_seance}")
+                : "Versement partiel (" . format_fcfa($part_seance_courante) . ") sur Séance #{$num_seance}";
+
+            // 1. Insertion du reçu dans payments
+            $stmtPay = $pdo->prepare("
+                INSERT INTO payments (
+                    contribution_id, paye_par_user_id, montant_total,
+                    part_beneficiaire, part_caisse_reserve, mode_paiement,
+                    reference_paiement, date_paiement, est_en_retard,
+                    statut_paiement, commentaire
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'valide', ?)
+            ");
+            $stmtPay->execute([
+                $contribution_id,
+                $user_id,
+                $total_seance_et_pen,
+                $part_seance_courante,
+                $part_caisse_reserve,
+                $mode_paiement,
+                $ref_paiement,
+                $est_en_retard ? 1 : 0,
+                $commentaire
+            ]);
+
+            // 2. Mise à jour de contributions
+            $stmtUpdateContrib = $pdo->prepare("
+                UPDATE contributions 
+                SET montant_paye = ?, statut = ?
                 WHERE id = ?
             ");
-            $stmtUpdateCaisse->execute([$part_caisse_reserve, $tontine_id]);
+            $stmtUpdateContrib->execute([$nouveau_montant_paye, $nouveau_statut_co, $contribution_id]);
 
-            // Marquer la pénalité existante comme réglée ou en créer la trace réglée
-            $stmtCheckPen = $pdo->prepare("SELECT id FROM penalties WHERE contribution_id = ? AND statut = 'en_attente' LIMIT 1");
-            $stmtCheckPen->execute([$contribution_id]);
-            $pen_id = $stmtCheckPen->fetchColumn();
-
-            if ($pen_id) {
-                $stmtUpdPen = $pdo->prepare("UPDATE penalties SET statut = 'regle', montant = ?, date_reglement = NOW() WHERE id = ?");
-                $stmtUpdPen->execute([$part_caisse_reserve, (int)$pen_id]);
-            } else {
-                $stmtInsPen = $pdo->prepare("
-                    INSERT INTO penalties (cycle_member_id, contribution_id, type_operation, montant, motif, statut, date_operation, date_reglement, auteur_id)
-                    VALUES (?, ?, 'penalite', ?, ?, 'regle', NOW(), NOW(), ?)
+            // 3. Créditer le pot du bouffeur de la séance
+            if ($part_seance_courante > 0) {
+                $stmtUpdatePot = $pdo->prepare("
+                    UPDATE cycle_members 
+                    SET montant_pot_recu = montant_pot_recu + ?,
+                        pot_totalement_recu = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu THEN 1 ELSE 0 END,
+                        date_reception_pot = CASE WHEN (montant_pot_recu + ?) >= montant_pot_attendu AND date_reception_pot IS NULL THEN NOW() ELSE date_reception_pot END
+                    WHERE id = ?
                 ");
-                $stmtInsPen->execute([
-                    (int)$mon_cycle_member['id'],
-                    $contribution_id,
-                    $part_caisse_reserve,
-                    "Pénalité de retard réglée lors du paiement de la Séance #{$cotisation['numero_seance']}",
-                    $user_id
+                $stmtUpdatePot->execute([
+                    $part_seance_courante,
+                    $part_seance_courante,
+                    $part_seance_courante,
+                    (int)$cotisation['beneficiaire_cycle_member_id']
                 ]);
+                $total_vers_bouffeurs += $part_seance_courante;
+            }
+
+            // 4. Si une part va à la caisse de réserve (pénalités réglées)
+            if ($part_caisse_reserve > 0) {
+                $pdo->prepare("UPDATE tontines SET solde_caisse_reserve = solde_caisse_reserve + ? WHERE id = ?")
+                    ->execute([$part_caisse_reserve, $tontine_id]);
+
+                $reste_pen_a_imputer = $part_caisse_reserve;
+                foreach ($penalites_attente as $pa) {
+                    if ($reste_pen_a_imputer <= 0) {
+                        break;
+                    }
+                    $m_pa = (float)$pa['montant'];
+                    if ($reste_pen_a_imputer >= $m_pa - 0.01) {
+                        $pdo->prepare("UPDATE penalties SET statut = 'regle', date_reglement = NOW() WHERE id = ?")
+                            ->execute([(int)$pa['id']]);
+                        $reste_pen_a_imputer -= $m_pa;
+                    } else {
+                        $pdo->prepare("UPDATE penalties SET montant = ? WHERE id = ?")
+                            ->execute([$m_pa - $reste_pen_a_imputer, (int)$pa['id']]);
+                        $reste_pen_a_imputer = 0;
+                    }
+                }
+                $total_vers_caisse += $part_caisse_reserve;
             }
         }
 
         $pdo->commit();
 
-        $msg = 'Paiement de ' . format_fcfa($montant_total) . ' enregistré avec succès !';
-        if ($est_en_retard) {
-            $msg .= " (dont " . format_fcfa($part_caisse_reserve) . " de pénalité de retard [{$pourcentage_penalite}%] versés à la Caisse de réserve).";
+        $msg = 'Versement de ' . format_fcfa($montant_saisi) . ' enregistré avec succès (Part Bouffeur : ' . format_fcfa($total_vers_bouffeurs);
+        if ($total_vers_caisse > 0) {
+            $msg .= ' | Part Caisse de réserve : ' . format_fcfa($total_vers_caisse);
         }
+        $msg .= ').';
         message_flash('success', $msg);
 
     } catch (PDOException $e) {
@@ -265,18 +334,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// 4. RÉCUPÉRATION DES SÉANCES DU MEMBRE CONNECTÉ
-// ══════════════════════════════════════════════════════════════════════════════
+// 3. RÉCUPÉRATION DES SÉANCES DU MEMBRE CONNECTÉ
 $seances = [];
+$mes_penalites_attente = 0.0;
+$mes_dettes_totales    = 0.0;
 
 if ($cycle && $mon_cycle_member) {
+    $stmtPenTot = $pdo->prepare("
+        SELECT COALESCE(SUM(montant), 0)
+        FROM penalties
+        WHERE cycle_member_id = ? AND type_operation = 'penalite' AND statut = 'en_attente'
+    ");
+    $stmtPenTot->execute([(int)$mon_cycle_member['id']]);
+    $mes_penalites_attente = (float)$stmtPenTot->fetchColumn();
+
     $stmtSeances = $pdo->prepare("
         SELECT 
-            c.id AS contribution_id, c.numero_seance, c.date_echeance,
-            c.montant_attendu, c.montant_paye, c.statut AS statut_contrib,
+            c.id AS contribution_id,
+            c.cycle_member_id,
+            c.beneficiaire_cycle_member_id,
+            c.numero_seance,
+            c.date_echeance,
+            c.montant_attendu,
+            c.montant_paye,
+            c.statut AS statut_contrib,
             u_ben.nom_complet AS ben_nom,
-            (SELECT p.mode_paiement FROM payments p WHERE p.contribution_id = c.id AND p.statut_paiement = 'valide' ORDER BY p.id DESC LIMIT 1) AS mode_paiement
+            (SELECT p.mode_paiement FROM payments p WHERE p.contribution_id = c.id AND p.statut_paiement = 'valide' ORDER BY p.id DESC LIMIT 1) AS mode_paiement,
+            (SELECT COALESCE(SUM(pen.montant), 0) FROM penalties pen WHERE pen.contribution_id = c.id AND pen.type_operation = 'penalite' AND pen.statut = 'en_attente') AS penalite_seance_attente
         FROM contributions c
         JOIN cycle_members cm_bouffeur ON cm_bouffeur.id = c.beneficiaire_cycle_member_id
         JOIN users u_ben ON u_ben.id = cm_bouffeur.user_id
@@ -296,7 +380,7 @@ require_once __DIR__ . '/../includes/navbar.php';
     <div class="container">
         <h2 class="fw-bold mb-1"><i class="bi bi-cash-stack me-2"></i>Mes Cotisations</h2>
         <p class="text-muted mb-0 small">
-            Suivi et paiement de vos cotisations — Cycle <?= $cycle ? '#' . (int)$cycle['numero_cycle'] : '—' ?>
+            Suivi et paiement de vos séances — Cycle <?= $cycle ? '#' . (int)$cycle['numero_cycle'] . ' (' . e($cycle['titre']) . ')' : '—' ?>
         </p>
     </div>
 </div>
@@ -322,73 +406,17 @@ require_once __DIR__ . '/../includes/navbar.php';
         </div>
     <?php else: ?>
 
-        <!-- =================================================================== -->
-        <!-- SECTION RÉSERVÉE À L'ADMINISTRATEUR : MODIFICATION DU POURCENTAGE   -->
-        <!-- =================================================================== -->
-        <?php if ($est_admin): ?>
-            <div class="card card-djangui p-4 mt-4 border-left-warning">
-                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-                    <div>
-                        <h5 class="fw-bold mb-1">
-                            <i class="bi bi-percent text-warning me-2"></i>Paramétrage de la Pénalité (Espace Secrétaire)
-                        </h5>
-                        <p class="text-muted small mb-0">
-                            Modifiez le pourcentage appliqué en cas de retard. La pénalité s'appliquera automatiquement 
-                            à tous les membres et sera versée dans la <strong>Caisse de réserve</strong>.
-                        </p>
-                    </div>
-                    <div class="mt-2 mt-md-0">
-                        <span class="badge bg-warning text-dark fs-6 px-3 py-2">
-                            Taux actuel : <?= $pourcentage_penalite ?>% (<?= format_fcfa($penalite_montant) ?>)
-                        </span>
-                    </div>
-                </div>
-
-                <form method="POST" action="<?= BASE_URL ?>/member/contributions.php" class="row g-3 align-items-center">
-                    <?= champ_csrf() ?>
-                    <input type="hidden" name="action" value="modifier_pourcentage_penalite">
-
-                    <div class="col-auto">
-                        <label for="pourcentage_penalite" class="col-form-label fw-semibold small">
-                            Nouveau pourcentage de pénalité :
-                        </label>
-                    </div>
-                    <div class="col-auto">
-                        <div class="input-group">
-                            <input type="number" 
-                                   step="0.5" 
-                                   min="0" 
-                                   max="100" 
-                                   name="pourcentage_penalite" 
-                                   id="pourcentage_penalite"
-                                   class="form-control" 
-                                   value="<?= $pourcentage_penalite ?>" 
-                                   required 
-                                   style="max-width: 120px;">
-                            <span class="input-group-text">%</span>
-                        </div>
-                    </div>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-glow-blue">
-                            <i class="bi bi-check-lg me-1"></i>Enregistrer le pourcentage
-                        </button>
-                    </div>
-                </form>
-            </div>
-        <?php endif; ?>
-
-        <!-- Rappel du taux pour les membres -->
+        <!-- Rappel des règles de cotisation, de pénalité et d'auto-compensation -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mt-4 mb-3 p-3 rounded-3 box-adaptive">
             <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation me-1"></i>Règle de retard</span>
+                <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation me-1"></i>Règles du cycle</span>
                 <span class="small">
-                    Pénalité de retard fixée par l'administrateur : 
-                    <strong><?= $pourcentage_penalite ?>%</strong> 
-                    (soit <strong><?= format_fcfa($penalite_montant) ?></strong> par séance impayée à l'échéance)
+                    Pénalité de retard : <strong><?= $pourcentage_penalite ?>%</strong> (<strong><?= format_fcfa($penalite_montant) ?></strong>) ·
+                    Séance ouverte : <strong>Séance #<?= $seance_max_ouverte ?></strong>
                 </span>
             </div>
             <div class="small text-muted mt-2 mt-md-0">
-                <i class="bi bi-info-circle me-1"></i>100% de la pénalité est reversée à la Caisse de réserve
+                <i class="bi bi-info-circle me-1"></i>Lors de votre tour de bouffe, votre part et vos dettes éventuelles sont déduites directement de votre pot.
             </div>
         </div>
 
@@ -400,8 +428,9 @@ require_once __DIR__ . '/../includes/navbar.php';
                         <tr>
                             <th>Séance</th>
                             <th>Bénéficiaire (Bouffeur)</th>
-                            <th>Montant cotisation</th>
-                            <th>Date d'échéance</th>
+                            <th>Période de la séance</th>
+                            <th>Versé / Attendu</th>
+                            <th>Reste à régler</th>
                             <th>Statut</th>
                             <th class="text-center">Action</th>
                         </tr>
@@ -409,66 +438,105 @@ require_once __DIR__ . '/../includes/navbar.php';
                     <tbody>
                         <?php 
                         $aujourdhui = date_actuelle('Y-m-d');
+                        $cumul_dettes_precedentes = 0.0;
+
                         foreach ($seances as $s): 
-                            $deja_paye   = ($s['statut_contrib'] === 'paye' || (float)$s['montant_paye'] >= (float)$s['montant_attendu']);
-                            $date_ech    = strtotime($s['date_echeance']);
-                            $en_retard   = (!$deja_paye && $date_ech < strtotime($aujourdhui));
-                            $penalite_du = round((float)$s['montant_attendu'] * ($pourcentage_penalite / 100));
+                            $num_s          = (int)$s['numero_seance'];
+                            $est_mon_tour   = ((int)$s['cycle_member_id'] === (int)$s['beneficiaire_cycle_member_id']);
+                            $deja_paye      = ($s['statut_contrib'] === 'paye' || (float)$s['montant_paye'] >= (float)$s['montant_attendu']);
+                            $reste_seance   = max(0.0, (float)$s['montant_attendu'] - (float)$s['montant_paye']);
+                            $date_ech       = strtotime($s['date_echeance']);
+                            $en_retard      = (!$deja_paye && !$est_mon_tour && $date_ech < strtotime($aujourdhui));
+                            $est_verrouillee = ($num_s > $seance_max_ouverte);
+                            $penalite_seance = (float)$s['penalite_seance_attente'];
+                            $periode_label   = formater_periode_seance($cycle['date_debut'], $num_s, $cycle['frequence'], $s['date_echeance']);
+
+                            // Plafond payable depuis cette ligne = reste de cette séance + dettes antérieures + pénalités en attente
+                            $max_payable_ligne = round($reste_seance + $cumul_dettes_precedentes + $mes_penalites_attente, 2);
                         ?>
-                        <tr>
-                            <td class="fw-bold">#<?= (int)$s['numero_seance'] ?></td>
-                            <td><?= e($s['ben_nom']) ?></td>
-                            <td>
-                                <strong><?= format_fcfa($s['montant_attendu']) ?></strong>
-                                <?php if ($en_retard): ?>
-                                    <br>
-                                    <small class="text-danger fw-semibold">
-                                        + <?= format_fcfa($penalite_du) ?> (Pénalité <?= $pourcentage_penalite ?>%)
-                                    </small>
+                        <tr class="<?= $est_mon_tour ? 'table-primary bg-opacity-10' : '' ?>">
+                            <td class="fw-bold">
+                                #<?= $num_s ?>
+                                <?php if ($est_mon_tour): ?>
+                                    <span class="badge bg-success ms-1">Mon Tour</span>
                                 <?php endif; ?>
                             </td>
+                            <td><?= e($s['ben_nom']) ?></td>
+                            <td class="small">
+                                <i class="bi bi-calendar3 me-1 text-primary"></i>
+                                <?= e($periode_label) ?>
+                            </td>
                             <td>
-                                <i class="bi bi-calendar3 me-1 text-muted"></i>
-                                <?= date('d/m/Y', $date_ech) ?>
+                                <strong><?= format_fcfa($s['montant_paye']) ?></strong>
+                                <span class="text-muted small">/ <?= format_fcfa($s['montant_attendu']) ?></span>
                             </td>
                             <td>
                                 <?php if ($deja_paye): ?>
+                                    <span class="text-success small fw-semibold">0 FCFA</span>
+                                <?php else: ?>
+                                    <strong class="text-danger"><?= format_fcfa($reste_seance) ?></strong>
+                                    <?php if ($penalite_seance > 0): ?>
+                                        <br><small class="text-danger fw-semibold">+ <?= format_fcfa($penalite_seance) ?> (Pénalité)</small>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($est_mon_tour && $deja_paye): ?>
+                                    <span class="badge bg-info text-dark"><i class="bi bi-arrow-left-right me-1"></i>Déduit sur mon pot</span>
+                                <?php elseif ($deja_paye): ?>
                                     <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Payé</span>
+                                <?php elseif ($est_verrouillee): ?>
+                                    <span class="badge bg-secondary"><i class="bi bi-lock-fill me-1"></i>Séance #<?= $num_s - 1 ?> non clôturée</span>
                                 <?php elseif ($en_retard): ?>
                                     <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>En retard</span>
+                                <?php elseif ((float)$s['montant_paye'] > 0): ?>
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-pie-chart me-1"></i>Partiel</span>
                                 <?php else: ?>
-                                    <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>À payer</span>
+                                    <span class="badge bg-primary"><i class="bi bi-clock me-1"></i>Ouverte</span>
                                 <?php endif; ?>
                             </td>
                             <td class="text-center">
-                                <?php if ($deja_paye): ?>
+                                <?php if ($est_mon_tour): ?>
+                                    <span class="text-primary small fw-semibold">
+                                        <i class="bi bi-shield-check me-1"></i>Compensé sur votre pot
+                                    </span>
+                                <?php elseif ($deja_paye): ?>
                                     <span class="text-success small fw-semibold">
                                         <i class="bi bi-check2-all me-1"></i><?= e(strtoupper($s['mode_paiement'] ?: 'RÉGLÉ')) ?>
                                     </span>
+                                <?php elseif ($est_verrouillee): ?>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Attendez la clôture de la séance précédente">
+                                        <i class="bi bi-lock-fill me-1"></i>Verrouillé
+                                    </button>
                                 <?php else: ?>
                                     <button type="button" 
                                             class="btn btn-sm btn-glow-emerald"
                                             data-bs-toggle="modal" 
                                             data-bs-target="#modalPaiement"
                                             data-contrib-id="<?= (int)$s['contribution_id'] ?>"
-                                            data-seance-num="<?= (int)$s['numero_seance'] ?>"
+                                            data-seance-num="<?= $num_s ?>"
                                             data-bouffeur="<?= e($s['ben_nom']) ?>"
-                                            data-montant="<?= (float)$s['montant_attendu'] ?>"
-                                            data-penalite="<?= (float)$penalite_du ?>"
-                                            data-pourcentage="<?= $pourcentage_penalite ?>"
-                                            data-en-retard="<?= $en_retard ? '1' : '0' ?>">
+                                            data-reste-seance="<?= $reste_seance ?>"
+                                            data-dettes-ant="<?= $cumul_dettes_precedentes ?>"
+                                            data-penalites="<?= $mes_penalites_attente ?>"
+                                            data-max-payable="<?= $max_payable_ligne ?>">
                                         <i class="bi bi-credit-card me-1"></i>Payer
                                     </button>
                                 <?php endif; ?>
                             </td>
                         </tr>
-                        <?php endforeach; ?>
+                        <?php
+                            if (!$deja_paye && !$est_mon_tour) {
+                                $cumul_dettes_precedentes += $reste_seance;
+                            }
+                        endforeach;
+                        ?>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Modal de confirmation de paiement -->
+        <!-- Modal de paiement avec saisie du montant exact (Point 4) -->
         <div class="modal fade" id="modalPaiement" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content card-djangui">
@@ -485,22 +553,42 @@ require_once __DIR__ . '/../includes/navbar.php';
                         </div>
 
                         <div class="modal-body">
-                            <!-- Résumé de la séance -->
-                            <div class="p-3 rounded-3 box-adaptive mb-3">
+                            <div class="p-3 rounded-3 box-adaptive mb-3 small">
                                 <p class="mb-1"><strong>Séance :</strong> <span id="resumeSeance"></span></p>
-                                <p class="mb-1"><strong>Bénéficiaire :</strong> <span id="resumeBouffeur"></span></p>
-                                <p class="mb-1"><strong>Cotisation :</strong> <span id="resumeMontant"></span></p>
+                                <p class="mb-1"><strong>Bénéficiaire (Bouffeur) :</strong> <span id="resumeBouffeur"></span></p>
+                                <p class="mb-1"><strong>Reste sur cette séance :</strong> <span id="resumeResteSeance" class="fw-bold"></span></p>
 
-                                <div id="blocPenalite" class="d-none">
-                                    <hr class="my-2">
-                                    <p class="mb-1 text-danger">
-                                        <i class="bi bi-exclamation-triangle me-1"></i>
-                                        <strong>Pénalité de retard (<span id="resumePourcentage"></span>%) :</strong> 
-                                        <span id="resumePenalite"></span>
-                                    </p>
-                                    <p class="mb-0 fw-bold fs-6 text-warning">
-                                        Total à payer : <span id="resumeTotal"></span>
-                                    </p>
+                                <div id="blocDettesAnt" class="d-none text-warning-emphasis">
+                                    <p class="mb-1"><strong>+ Dettes séances précédentes :</strong> <span id="resumeDettesAnt"></span></p>
+                                </div>
+
+                                <div id="blocPenalite" class="d-none text-danger">
+                                    <p class="mb-1"><strong>+ Pénalités en attente :</strong> <span id="resumePenalite"></span></p>
+                                </div>
+
+                                <hr class="my-2">
+                                <p class="mb-0 fw-bold fs-6 text-primary">
+                                    Plafond total autorisé : <span id="resumeTotalMax"></span>
+                                </p>
+                            </div>
+
+                            <!-- Point 4 : Choisir le montant exact à payer -->
+                            <div class="mb-3">
+                                <label for="inputMontantSaisi" class="form-label fw-bold">
+                                    Montant exact à verser maintenant (FCFA) *
+                                </label>
+                                <div class="input-group">
+                                    <input type="number"
+                                           name="montant_saisi"
+                                           id="inputMontantSaisi"
+                                           class="form-control form-control-lg fw-bold text-success"
+                                           min="100"
+                                           step="100"
+                                           required>
+                                    <span class="input-group-text fw-bold">FCFA</span>
+                                </div>
+                                <div class="form-text small">
+                                    Vous pouvez verser une avance partielle ou solder la totalité (sans dépasser le plafond).
                                 </div>
                             </div>
 
@@ -548,29 +636,39 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!modal) return;
 
     modal.addEventListener('show.bs.modal', function (event) {
-        const btn = event.relatedTarget;
+        const btn         = event.relatedTarget;
         const contribId   = btn.getAttribute('data-contrib-id');
         const seanceNum   = btn.getAttribute('data-seance-num');
         const bouffeur    = btn.getAttribute('data-bouffeur');
-        const montant     = parseFloat(btn.getAttribute('data-montant')) || 0;
-        const penalite    = parseFloat(btn.getAttribute('data-penalite')) || 0;
-        const pourcentage = btn.getAttribute('data-pourcentage') || '10';
-        const enRetard    = btn.getAttribute('data-en-retard') === '1';
+        const resteSeance = parseFloat(btn.getAttribute('data-reste-seance')) || 0;
+        const dettesAnt   = parseFloat(btn.getAttribute('data-dettes-ant')) || 0;
+        const penalites   = parseFloat(btn.getAttribute('data-penalites')) || 0;
+        const maxPayable  = parseFloat(btn.getAttribute('data-max-payable')) || resteSeance;
 
-        document.getElementById('inputContribId').value       = contribId;
-        document.getElementById('resumeSeance').textContent    = 'Séance n°' + seanceNum;
-        document.getElementById('resumeBouffeur').textContent  = bouffeur;
-        document.getElementById('resumeMontant').textContent   = montant.toLocaleString('fr-FR') + ' FCFA';
+        document.getElementById('inputContribId').value          = contribId;
+        document.getElementById('resumeSeance').textContent      = 'Séance n°' + seanceNum;
+        document.getElementById('resumeBouffeur').textContent    = bouffeur;
+        document.getElementById('resumeResteSeance').textContent = resteSeance.toLocaleString('fr-FR') + ' FCFA';
+        document.getElementById('resumeTotalMax').textContent    = maxPayable.toLocaleString('fr-FR') + ' FCFA';
 
-        const bloc = document.getElementById('blocPenalite');
-        if (enRetard && penalite > 0) {
-            const total = montant + penalite;
-            document.getElementById('resumePourcentage').textContent = pourcentage;
-            document.getElementById('resumePenalite').textContent    = penalite.toLocaleString('fr-FR') + ' FCFA';
-            document.getElementById('resumeTotal').textContent       = total.toLocaleString('fr-FR') + ' FCFA';
-            bloc.classList.remove('d-none');
+        const inputMontant = document.getElementById('inputMontantSaisi');
+        inputMontant.max   = maxPayable;
+        inputMontant.value = resteSeance + (penalites > 0 ? penalites : 0);
+
+        const blocDettes = document.getElementById('blocDettesAnt');
+        if (dettesAnt > 0) {
+            document.getElementById('resumeDettesAnt').textContent = dettesAnt.toLocaleString('fr-FR') + ' FCFA';
+            blocDettes.classList.remove('d-none');
         } else {
-            bloc.classList.add('d-none');
+            blocDettes.classList.add('d-none');
+        }
+
+        const blocPen = document.getElementById('blocPenalite');
+        if (penalites > 0) {
+            document.getElementById('resumePenalite').textContent = penalites.toLocaleString('fr-FR') + ' FCFA';
+            blocPen.classList.remove('d-none');
+        } else {
+            blocPen.classList.add('d-none');
         }
     });
 });

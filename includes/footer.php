@@ -1,17 +1,24 @@
 <?php
-// includes/footer.php — Pied de page + Barre de contrôle temporel (Simulation)
+// includes/footer.php — Pied de page + Barre de contrôle temporel (Simulation avec plancher de création)
 $decalage_sec = function_exists('obtenir_decalage_temps') ? obtenir_decalage_temps() : 0;
 $date_sim_str = function_exists('date_actuelle') ? date_actuelle('d/m/Y') : date('d/m/Y');
 $date_sim_iso = function_exists('date_actuelle') ? date_actuelle('Y-m-d') : date('Y-m-d');
 $jours_ecart  = (int)round($decalage_sec / 86400);
+
+$ts_min_tontine = (isset($pdo) && $pdo instanceof PDO && function_exists('obtenir_timestamp_min_tontine'))
+    ? obtenir_timestamp_min_tontine($pdo)
+    : strtotime('2026-01-01');
+$date_min_iso = date('Y-m-d', $ts_min_tontine);
+$date_min_str = date('d/m/Y', $ts_min_tontine);
+$au_plancher  = ($date_sim_iso <= $date_min_iso);
 ?>
 <footer class="mt-auto py-4 footer-djangui text-center small">
     <div class="container">
         <!-- BARRE DE SIMULATION TEMPORELLE (AVANCER / RECULER LE TEMPS) -->
         <div class="p-3 mb-3 rounded-3 box-adaptive border">
             <div class="d-flex flex-column flex-lg-row justify-content-between align-items-center gap-2">
-                <!-- Affichage de la date active -->
-                <div class="d-flex align-items-center gap-2">
+                <!-- Affichage de la date active et de la date limite minimale (Point 6) -->
+                <div class="d-flex flex-wrap align-items-center justify-content-center gap-2">
                     <span class="badge <?= $decalage_sec !== 0 ? 'bg-warning text-dark' : 'bg-secondary' ?> px-2 py-1">
                         <i class="bi bi-clock-history me-1"></i><?= $decalage_sec !== 0 ? 'TEMPS SIMULÉ' : 'TEMPS RÉEL' ?>
                     </span>
@@ -21,16 +28,19 @@ $jours_ecart  = (int)round($decalage_sec / 86400);
                             <span class="text-muted">(<?= $jours_ecart > 0 ? '+' . $jours_ecart : $jours_ecart ?> j.)</span>
                         <?php endif; ?>
                     </span>
+                    <span class="badge bg-light text-muted border" title="Impossible de reculer avant la création de la tontine">
+                        Min : <?= e($date_min_str) ?>
+                    </span>
                 </div>
 
                 <!-- Boutons rapides pour reculer / avancer le temps -->
                 <form method="POST" class="d-flex flex-wrap justify-content-center align-items-center gap-1 m-0">
                     <?= champ_csrf() ?>
                     <div class="btn-group btn-group-sm" role="group" aria-label="Reculer le temps">
-                        <button type="submit" name="djangui_time_action" value="-1m" class="btn btn-outline-secondary" title="Reculer d'un mois">-1 Mois</button>
-                        <button type="submit" name="djangui_time_action" value="-15d" class="btn btn-outline-secondary" title="Reculer de 15 jours">-15j</button>
-                        <button type="submit" name="djangui_time_action" value="-7d" class="btn btn-outline-secondary" title="Reculer d'une semaine">-1 Sem</button>
-                        <button type="submit" name="djangui_time_action" value="-1d" class="btn btn-outline-secondary" title="Reculer d'un jour">-1j</button>
+                        <button type="submit" name="djangui_time_action" value="-1m" class="btn btn-outline-secondary" <?= $au_plancher ? 'disabled' : '' ?> title="Reculer d'un mois">-1 Mois</button>
+                        <button type="submit" name="djangui_time_action" value="-15d" class="btn btn-outline-secondary" <?= $au_plancher ? 'disabled' : '' ?> title="Reculer de 15 jours">-15j</button>
+                        <button type="submit" name="djangui_time_action" value="-7d" class="btn btn-outline-secondary" <?= $au_plancher ? 'disabled' : '' ?> title="Reculer d'une semaine">-1 Sem</button>
+                        <button type="submit" name="djangui_time_action" value="-1d" class="btn btn-outline-secondary" <?= $au_plancher ? 'disabled' : '' ?> title="Reculer d'un jour">-1j</button>
                     </div>
 
                     <?php if ($decalage_sec !== 0): ?>
@@ -47,11 +57,11 @@ $jours_ecart  = (int)round($decalage_sec / 86400);
                     </div>
                 </form>
 
-                <!-- Aller directement à une date précise -->
+                <!-- Aller directement à une date précise (bornée par min = date de création de la tontine) -->
                 <form method="POST" class="d-flex align-items-center gap-1 m-0">
                     <?= champ_csrf() ?>
                     <input type="hidden" name="djangui_time_action" value="goto_date">
-                    <input type="date" name="target_date" value="<?= e($date_sim_iso) ?>" class="form-control form-control-sm" style="width: 140px;">
+                    <input type="date" name="target_date" min="<?= e($date_min_iso) ?>" value="<?= e($date_sim_iso) ?>" class="form-control form-control-sm" style="width: 140px;">
                     <button type="submit" class="btn btn-sm btn-glow-blue px-2">Aller</button>
                 </form>
             </div>

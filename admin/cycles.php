@@ -1,5 +1,5 @@
 <?php
-// admin/cycles.php — Gestion des cycles successifs de la tontine (Membre 2)
+// admin/cycles.php — Gestion des cycles successifs de la tontine (Création %, Activation, Suppression brouillon, Clôture)
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
@@ -21,37 +21,39 @@ if ($tontine) {
     }
 }
 
-// 2. Récupérer tous les membres actifs de la tontine (pour les inscrire à un nouveau cycle)
+// 2. Récupérer tous les membres actifs et validés de la tontine
 $stmtMembres = $pdo->prepare("SELECT id, code_public, nom_complet, role, telephone FROM users WHERE tontine_id = ? AND statut_membre = 'actif' AND statut_validation = 'accepte' ORDER BY role ASC, nom_complet ASC");
 $stmtMembres->execute([$tontine_id]);
 $membres_actifs = $stmtMembres->fetchAll();
 
-// 3. TRAITEMENT DES ACTIONS POST (Créer, Activer, Clôturer un cycle)
+// 3. TRAITEMENT DES ACTIONS POST (Créer, Activer, Supprimer brouillon, Clôturer un cycle)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifier_csrf();
     $action = $_POST['action'] ?? '';
 
-    // ACTION A : Créer un nouveau cycle (en brouillon) avec ses participants
+    // ACTION A : Créer un nouveau cycle (en brouillon) avec pénalité en pourcentage (%) (Point 2 & Point 10)
     if ($action === 'creer_cycle') {
-        $titre              = trim($_POST['titre'] ?? '');
-        $montant_cotisation = (float)($_POST['montant_cotisation'] ?? 0);
-        $frequence          = $_POST['frequence'] ?? 'mensuel';
-        $jour_echeance      = (int)($_POST['jour_echeance'] ?? 5);
-        $penalite_retard    = (float)($_POST['penalite_retard'] ?? 0);
-        $date_debut = $_POST['date_debut'] ?? date_actuelle('Y-m-d');
-        $participants       = $_POST['participants'] ?? [];
+        $titre                = trim($_POST['titre'] ?? '');
+        $montant_cotisation   = (float)($_POST['montant_cotisation'] ?? 0);
+        $frequence            = $_POST['frequence'] ?? 'mensuel';
+        $pourcentage_penalite = filter_var($_POST['pourcentage_penalite'] ?? 5, FILTER_VALIDATE_FLOAT);
+        $date_debut           = $_POST['date_debut'] ?? date_actuelle('Y-m-d');
+        $participants         = $_POST['participants'] ?? [];
 
-        if ($montant_cotisation <= 0) {
+        if ($tontine && $tontine['statut'] === 'fermee') {
+            message_flash('danger', 'Impossible de créer un cycle : cette tontine est définitivement fermée.');
+        } elseif ($montant_cotisation <= 0) {
             message_flash('danger', 'Le montant de la cotisation doit être supérieur à 0 FCFA.');
         } elseif (!in_array($frequence, ['hebdo', 'bimensuel', 'mensuel'], true)) {
             message_flash('danger', 'La fréquence choisie est invalide.');
+        } elseif ($pourcentage_penalite === false || $pourcentage_penalite < 0 || $pourcentage_penalite > 100) {
+            message_flash('danger', 'Le pourcentage de pénalité doit être compris entre 0 % et 100 %.');
         } elseif (count($participants) < 2) {
             message_flash('danger', 'Veuillez sélectionner au moins 2 membres participants pour créer un cycle.');
         } else {
             try {
                 $pdo->beginTransaction();
 
-                // Calcul automatique du numéro de cycle suivant (Cycle 1, Cycle 2...)
                 $stmtNum = $pdo->prepare("SELECT COALESCE(MAX(numero_cycle), 0) + 1 FROM cycles WHERE tontine_id = ?");
                 $stmtNum->execute([$tontine_id]);
                 $prochain_numero = (int)$stmtNum->fetchColumn();
@@ -60,21 +62,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $titre = 'Cycle #' . $prochain_numero;
                 }
 
-                // Calcul de la date de fin prévue selon le nombre de participants et la fréquence
                 $nb_participants = count($participants);
-                $intervalle = match ($frequence) {
-                    'hebdo'     => '+' . $nb_participants . ' weeks',
-                    'bimensuel' => '+' . ($nb_participants * 15) . ' days',
-                    default     => '+' . $nb_participants . ' months',
-                };
-                $date_fin_prevue = date('Y-m-d', strtotime($date_debut . ' ' . $intervalle));
+                // Conversion du pourcentage en montant FCFA par séance (Point 2)
+                $penalite_retard = round($montant_cotisation * ($pourcentage_penalite / 100));
+                // Date de fin = échéance de la dernière séance (Point 10 : Séance 1 = J0, Séance N = J0 + (N-1) périodes)
+                $date_fin_prevue = calculer_echeance_seance($date_debut, $nb_participants, $frequence);
 
-                // Insertion du cycle en statut 'brouillon' (noms exacts des colonnes SQL)
                 $stmtInsert = $pdo->prepare("
                     INSERT INTO cycles (
                         tontine_id, numero_cycle, titre, montant_cotisation, frequence,
-                        jour_limite_paiement, montant_penalite_retard, date_debut, date_fin, statut, tirage_verrouille
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', 0)
+                        montant_penalite_retard, date_debut, date_fin, statut, tirage_verrouille
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', 0)
                 ");
                 $stmtInsert->execute([
                     $tontine_id,
@@ -82,14 +80,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $titre,
                     $montant_cotisation,
                     $frequence,
-                    $jour_echeance,
                     $penalite_retard,
                     $date_debut,
                     $date_fin_prevue
                 ]);
                 $nouveau_cycle_id = (int)$pdo->lastInsertId();
 
-                // Inscription des membres cochés dans cycle_members
                 $pot_attendu = $montant_cotisation * $nb_participants;
                 $stmtCM = $pdo->prepare("
                     INSERT INTO cycle_members (
@@ -102,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $pdo->commit();
-                message_flash('success', "Le {$titre} a été créé avec {$nb_participants} participants. Vous pouvez maintenant l'activer.");
+                message_flash('success', "Le {$titre} a été créé en brouillon ({$nb_participants} participants, pénalité fixée à {$pourcentage_penalite}% soit " . format_fcfa($penalite_retard) . ").");
             } catch (PDOException $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
@@ -124,13 +120,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // Vérifier qu'aucun autre cycle n'est déjà actif
         $stmtActif = $pdo->prepare("SELECT id FROM cycles WHERE tontine_id = ? AND statut = 'actif' LIMIT 1");
         $stmtActif->execute([$tontine_id]);
         if ($stmtActif->fetch()) {
             message_flash('warning', 'Un cycle est déjà actif dans votre tontine. Clôturez le cycle en cours avant d\'en activer un nouveau.');
         } else {
-            // Vérifier le nombre de participants inscrits dans ce cycle
             $stmtCount = $pdo->prepare("SELECT COUNT(*) FROM cycle_members WHERE cycle_id = ?");
             $stmtCount->execute([$cycle_id]);
             $nb_inscrits = (int)$stmtCount->fetchColumn();
@@ -147,7 +141,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // ACTION C : Clôturer un cycle actif en fin de parcours (sans effacer l'historique)
+    // ACTION C : Supprimer un cycle en statut 'brouillon' (Point 3)
+    if ($action === 'supprimer_cycle') {
+        $cycle_id = (int)($_POST['cycle_id'] ?? 0);
+        try {
+            $stmtDel = $pdo->prepare("DELETE FROM cycles WHERE id = ? AND tontine_id = ? AND statut = 'brouillon'");
+            $stmtDel->execute([$cycle_id, $tontine_id]);
+            if ($stmtDel->rowCount() === 1) {
+                message_flash('success', 'Le cycle en brouillon a été supprimé avec succès.');
+            } else {
+                message_flash('warning', 'Impossible de supprimer ce cycle : seuls les cycles en statut « Brouillon » peuvent être supprimés.');
+            }
+        } catch (PDOException $e) {
+            message_flash('danger', 'Erreur lors de la suppression du brouillon.');
+        }
+        header('Location: ' . BASE_URL . '/admin/cycles.php');
+        exit;
+    }
+
+    // ACTION D : Clôturer un cycle actif en fin de parcours
     if ($action === 'cloturer_cycle') {
         $cycle_id = (int)($_POST['cycle_id'] ?? 0);
         $stmtUpd = $pdo->prepare("UPDATE cycles SET statut = 'termine' WHERE id = ? AND tontine_id = ? AND statut = 'actif'");
@@ -160,7 +172,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // 4. Récupérer la liste de tous les cycles de la tontine avec statistiques
-// 4. Récupérer la liste de tous les cycles de la tontine avec statistiques (Corrigé via cycle_members)
 $stmtCycles = $pdo->prepare("
     SELECT c.*,
            (SELECT COUNT(*) FROM cycle_members cm WHERE cm.cycle_id = c.id) AS nb_participants,
@@ -193,7 +204,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                 </span>
                 <h1 class="fw-bold h2 mb-1">Gestion des Cycles de Cotisation</h1>
                 <p class="text-muted small mb-0">
-                    Configurez le montant, la fréquence, les règles de pénalité et la liste des participants pour chaque cycle.
+                    Configurez le montant, la fréquence, le pourcentage de pénalité et la liste des participants pour chaque cycle.
                 </p>
             </div>
             <div class="col-lg-4 text-lg-end">
@@ -242,7 +253,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold small">Cotisation par séance (FCFA) *</label>
-                            <input type="number" name="montant_cotisation" class="form-control fw-bold" min="500" step="500" value="50000" required>
+                            <input type="number" name="montant_cotisation" id="inputMontantCotis" class="form-control fw-bold" min="500" step="500" value="50000" required>
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold small">Fréquence des séances *</label>
@@ -254,21 +265,22 @@ require_once __DIR__ . '/../includes/navbar.php';
                         </div>
                     </div>
 
-                    <div class="row g-3 mb-3">
-                        <div class="col-sm-6">
-                            <label class="form-label fw-semibold small">Date de début du cycle *</label>
-                            <input type="date" name="date_debut" class="form-control" value="<?= date_actuelle('Y-m-d') ?>" required>
-                        </div>
-                        <div class="col-sm-6">
-                            <label class="form-label fw-semibold small">Jour limite (ex: le 5 du mois)</label>
-                            <input type="number" name="jour_echeance" class="form-control" min="1" max="28" value="5" required>
-                        </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Date de lancement (1re séance) *</label>
+                        <input type="date" name="date_debut" class="form-control" value="<?= date_actuelle('Y-m-d') ?>" required>
                     </div>
 
+                    <!-- Point 2 : Définition en POURCENTAGE (%) de la somme à cotiser -->
                     <div class="mb-3">
-                        <label class="form-label fw-semibold small">Pénalité de retard automatique (FCFA) *</label>
-                        <input type="number" name="penalite_retard" class="form-control" min="0" step="100" value="2500" required>
-                        <div class="form-text small">Ce montant alimentera la caisse de réserve en cas de retard.</div>
+                        <label class="form-label fw-semibold small">Taux de pénalité de retard (%) *</label>
+                        <div class="input-group">
+                            <input type="number" name="pourcentage_penalite" id="inputPourcentagePenalite" class="form-control fw-bold" min="0" max="100" step="0.5" value="5" required>
+                            <span class="input-group-text">%</span>
+                            <span class="input-group-text text-danger fw-semibold" id="aperçuPenaliteFcfa">= 2 500 FCFA</span>
+                        </div>
+                        <div class="form-text small">
+                            Calculé sur la cotisation d'une séance. Modifiable ensuite dans <a href="<?= BASE_URL ?>/admin/penalties.php">Caisse & Pénalités</a>.
+                        </div>
                     </div>
 
                     <!-- Sélection des membres participants au cycle -->
@@ -282,7 +294,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                             </button>
                         </div>
                         <div class="p-3 rounded-3 box-adaptive" style="max-height: 220px; overflow-y: auto;">
-                            <?php foreach ($membres_actifs as$m): ?>
+                            <?php foreach ($membres_actifs as $m): ?>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input js-participant-check" type="checkbox"
                                            name="participants[]" value="<?= (int)$m['id'] ?>"
@@ -302,7 +314,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                     </div>
 
                     <button type="submit" class="btn btn-glow-emerald w-100 py-2">
-                        <i class="bi bi-save2-fill me-2"></i>Enregistrer le cycle
+                        <i class="bi bi-save2-fill me-2"></i>Enregistrer le cycle (Brouillon)
                     </button>
                 </form>
             </div>
@@ -323,7 +335,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                     </div>
                 <?php else: ?>
                     <div class="d-flex flex-column gap-3">
-                        <?php foreach ($cycles as$c): ?>
+                        <?php foreach ($cycles as $c): ?>
                             <?php
                             $badgeStatut = match ($c['statut']) {
                                 'actif'     => '<span class="badge bg-success px-3 py-2 rounded-pill"><i class="bi bi-play-circle-fill me-1"></i>Actif</span>',
@@ -331,7 +343,10 @@ require_once __DIR__ . '/../includes/navbar.php';
                                 default     => '<span class="badge bg-secondary px-3 py-2 rounded-pill"><i class="bi bi-archive-fill me-1"></i>Terminé</span>',
                             };
                             $pot_unitaire = (float)$c['montant_cotisation'] * (int)$c['nb_participants'];
-                            $taux = ($c['total_attendu'] > 0) ? round(($c['total_collecte'] /$c['total_attendu']) * 100, 1) : 0;
+                            $taux = ($c['total_attendu'] > 0) ? round(($c['total_collecte'] / $c['total_attendu']) * 100, 1) : 0;
+                            $pct_pen = ((float)$c['montant_cotisation'] > 0)
+                                ? round(((float)$c['montant_penalite_retard'] / (float)$c['montant_cotisation']) * 100, 1)
+                                : 0;
                             ?>
                             <div class="p-3 rounded-4 box-adaptive">
                                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
@@ -364,7 +379,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     </div>
                                     <div class="col-6 col-sm-3">
                                         <span class="text-muted d-block">Pénalité retard</span>
-                                        <strong class="text-danger"><?= format_fcfa($c['montant_penalite_retard']) ?></strong>
+                                        <strong class="text-danger"><?= $pct_pen ?>% (<?= format_fcfa($c['montant_penalite_retard']) ?>)</strong>
                                     </div>
                                 </div>
 
@@ -372,7 +387,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     <div class="mt-2 mb-3">
                                         <div class="d-flex justify-content-between small mb-1">
                                             <span class="text-muted">Progression globale des cotisations du cycle :</span>
-                                            <span class="fw-bold"><?= format_fcfa($c['total_collecte']) ?> / <?= format_fcfa($c['total_attendu']) ?> (<?=$taux ?> %)</span>
+                                            <span class="fw-bold"><?= format_fcfa($c['total_collecte']) ?> / <?= format_fcfa($c['total_attendu']) ?> (<?= $taux ?> %)</span>
                                         </div>
                                         <div class="progress" style="height: 8px;">
                                             <div class="progress-bar bg-success" style="width: <?= min(100, $taux) ?>%"></div>
@@ -382,7 +397,11 @@ require_once __DIR__ . '/../includes/navbar.php';
 
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 border-top">
                                     <span class="small text-muted">
-                                        <i class="bi bi-calendar-event me-1"></i>Début : <?= e($c['date_debut']) ?> | Fréquence : <strong><?= e(ucfirst($c['frequence'])) ?></strong>
+                                        <i class="bi bi-calendar-event me-1"></i>Début : <?= date('d/m/Y', strtotime($c['date_debut'])) ?>
+                                        <?php if (!empty($c['date_fin'])): ?>
+                                            → Fin : <?= date('d/m/Y', strtotime($c['date_fin'])) ?>
+                                        <?php endif; ?>
+                                        | <strong><?= e(ucfirst($c['frequence'])) ?></strong>
                                     </span>
 
                                     <div class="d-flex flex-wrap gap-2">
@@ -392,7 +411,16 @@ require_once __DIR__ . '/../includes/navbar.php';
                                                 <input type="hidden" name="action" value="activer_cycle">
                                                 <input type="hidden" name="cycle_id" value="<?= (int)$c['id'] ?>">
                                                 <button type="submit" class="btn btn-sm btn-glow-emerald">
-                                                    <i class="bi bi-play-fill me-1"></i>Activer ce cycle
+                                                    <i class="bi bi-play-fill me-1"></i>Activer
+                                                </button>
+                                            </form>
+                                            <!-- Point 3 : Bouton de suppression d'un cycle en brouillon -->
+                                            <form method="POST" action="cycles.php" class="d-inline" onsubmit="return confirm('Voulez-vous vraiment supprimer définitivement ce cycle en brouillon ?');">
+                                                <?= champ_csrf() ?>
+                                                <input type="hidden" name="action" value="supprimer_cycle">
+                                                <input type="hidden" name="cycle_id" value="<?= (int)$c['id'] ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-trash3-fill me-1"></i>Supprimer le brouillon
                                                 </button>
                                             </form>
                                         <?php elseif ($c['statut'] === 'actif'): ?>
@@ -434,6 +462,24 @@ document.addEventListener('DOMContentLoaded', function () {
             const allChecked = Array.from(checkboxes).every(cb => cb.checked);
             checkboxes.forEach(cb => cb.checked = !allChecked);
         });
+    }
+
+    const inputMontant = document.getElementById('inputMontantCotis');
+    const inputPct     = document.getElementById('inputPourcentagePenalite');
+    const apercuFcfa   = document.getElementById('aperçuPenaliteFcfa');
+
+    function majApercuPenalite() {
+        if (!inputMontant || !inputPct || !apercuFcfa) return;
+        const m = parseFloat(inputMontant.value) || 0;
+        const p = parseFloat(inputPct.value) || 0;
+        const fcfa = Math.round(m * (p / 100));
+        apercuFcfa.textContent = '= ' + fcfa.toLocaleString('fr-FR') + ' FCFA';
+    }
+
+    if (inputMontant && inputPct) {
+        inputMontant.addEventListener('input', majApercuPenalite);
+        inputPct.addEventListener('input', majApercuPenalite);
+        majApercuPenalite();
     }
 });
 </script>

@@ -99,16 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $rang          = $seance_index + 1;
                     $numero_seance = $rang;
 
-                    if ($seance_index === 0) {
-                        $date_echeance = $date_base;
-                    } else {
-                        $decalage = match ($frequence) {
-                            'hebdo'     => '+' . $seance_index . ' weeks',
-                            'bimensuel' => '+' . ($seance_index * 15) . ' days',
-                            default     => '+' . $seance_index . ' months',
-                        };
-                        $date_echeance = date('Y-m-d', strtotime($date_base . ' ' . $decalage));
-                    }
+                    // Point 10 : Séance 1 = J0, Séance 2 = du J0+1 au J0+période, etc.
+                    $date_echeance = calculer_echeance_seance($date_base, $numero_seance, $frequence);
 
                     // Mise à jour du rang ET de la date prévue du pot du bouffeur
                     $stmtUpdateRang->execute([$rang, $date_echeance, $pot_attendu, (int)$beneficiaire['id']]);
@@ -124,6 +116,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ]);
                     }
                 }
+
+                // Mise à jour de la date de fin exacte du cycle sur la dernière séance
+                $derniere_echeance = calculer_echeance_seance($date_base, count($participants), $frequence);
+                $pdo->prepare("UPDATE cycles SET date_fin = ? WHERE id = ?")->execute([$derniere_echeance, $cycle_id_post]);
 
                 // Verrouillage définitif du tirage au sort avec date et auteur
                 $stmtLock = $pdo->prepare("
@@ -334,7 +330,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     <?php if ($info_seance): ?>
                                         <div class="fw-semibold">
                                             <i class="bi bi-calendar-event text-primary me-1"></i>
-                                            <?= date('d/m/Y', strtotime($info_seance['date_echeance'])) ?>
+                                            <?= e(formater_periode_seance($cycle_courant['date_debut'], $rang, $cycle_courant['frequence'], $info_seance['date_echeance'])) ?>
                                         </div>
                                         <span class="small text-muted">Séance #<?= $rang ?></span>
                                     <?php else: ?>

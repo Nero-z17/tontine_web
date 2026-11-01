@@ -1,27 +1,78 @@
 <?php
-// admin/penalties.php — Gestion de la caisse de réserve, des pénalités et des bonus
+// admin/penalties.php — Gestion de la caisse de réserve, du taux de pénalité (%) et des opérations (Pénalités & Bonus)
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 verifier_admin();
 
 $tontine_id = (int)($_SESSION['tontine_id'] ?? 0);
-$user_id = (int)$_SESSION['user_id'];
+$user_id    = (int)$_SESSION['user_id'];
+
+// Cycle actif de la tontine (pour le réglage du % de pénalité — Point 2)
+$stmtCycleActif = $pdo->prepare("SELECT * FROM cycles WHERE tontine_id = ? AND statut = 'actif' LIMIT 1");
+$stmtCycleActif->execute([$tontine_id]);
+$cycle_actif = $stmtCycleActif->fetch();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifier_csrf();
     $action = $_POST['action'] ?? '';
 
+    // ACTION A (Point 2) : Modifier le pourcentage (%) de pénalité de retard du cycle actif
+    if ($action === 'modifier_taux_penalite') {
+        if (!$cycle_actif) {
+            message_flash('warning', 'Aucun cycle actif : activez d\'abord un cycle pour modifier son taux de pénalité.');
+            header('Location: ' . BASE_URL . '/admin/penalties.php');
+            exit;
+        }
+
+        $nouveau_pct = filter_var($_POST['pourcentage_penalite'] ?? null, FILTER_VALIDATE_FLOAT);
+        if ($nouveau_pct === false || $nouveau_pct < 0 || $nouveau_pct > 100) {
+            message_flash('danger', 'Veuillez saisir un pourcentage valide compris entre 0 % et 100 %.');
+        } else {
+            $montant_cotis = (float)$cycle_actif['montant_cotisation'];
+            $nouveau_montant_pen = round($montant_cotis * ($nouveau_pct / 100));
+
+            $pdo->beginTransaction();
+            try {
+                $stmtUpdCycle = $pdo->prepare("UPDATE cycles SET montant_penalite_retard = ? WHERE id = ? AND tontine_id = ?");
+                $stmtUpdCycle->execute([$nouveau_montant_pen, (int)$cycle_actif['id'], $tontine_id]);
+
+                // Mettre également à jour les pénalités auto-générées encore en_attente sur ce cycle
+                $stmtUpdPen = $pdo->prepare("
+                    UPDATE penalties p
+                    INNER JOIN cycle_members cm ON cm.id = p.cycle_member_id
+                    SET p.montant = ?
+                    WHERE cm.cycle_id = ?
+                      AND p.type_operation = 'penalite'
+                      AND p.statut = 'en_attente'
+                      AND p.contribution_id IS NOT NULL
+                ");
+                $stmtUpdPen->execute([$nouveau_montant_pen, (int)$cycle_actif['id']]);
+
+                $pdo->commit();
+                message_flash('success', "Le taux de pénalité du cycle actif a été fixé à {$nouveau_pct} % (soit " . format_fcfa($nouveau_montant_pen) . " par cotisation en retard).");
+            } catch (PDOException $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                message_flash('danger', 'Erreur lors de la mise à jour du taux de pénalité.');
+            }
+        }
+        header('Location: ' . BASE_URL . '/admin/penalties.php');
+        exit;
+    }
+
+    // ACTION B : Créer une opération manuelle (Pénalité ou Bonus)
     if ($action === 'creer_operation') {
         $cycle_member_id = (int)($_POST['cycle_member_id'] ?? 0);
-        $type_operation = $_POST['type_operation'] ?? '';
-        $montant_saisi = trim($_POST['montant'] ?? '');
-        $motif = trim($_POST['motif'] ?? '');
+        $type_operation  = $_POST['type_operation'] ?? '';
+        $montant_saisi   = trim($_POST['montant'] ?? '');
+        $motif           = trim($_POST['motif'] ?? '');
         $motif_trop_long = function_exists('mb_strlen')
             ? mb_strlen($motif, 'UTF-8') > 255
             : strlen($motif) > 255;
-        $montant_valide = preg_match('/^\d+(?:[.,]\d{1,2})?$/D', $montant_saisi) === 1;
-        $montant = $montant_valide ? (float)str_replace(',', '.', $montant_saisi) : 0;
+        $montant_valide  = preg_match('/^\d+(?:[.,]\d{1,2})?$/D', $montant_saisi) === 1;
+        $montant         = $montant_valide ? (float)str_replace(',', '.', $montant_saisi) : 0;
 
         $stmtMembre = $pdo->prepare("
             SELECT cm.id
@@ -58,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // ACTION C : Régler ou annuler une opération en attente
     if (in_array($action, ['regler_operation', 'annuler_operation'], true)) {
         $penalty_id = (int)($_POST['penalty_id'] ?? 0);
 
@@ -96,9 +148,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     WHERE id = ?
                 ");
                 $stmtCaisse->execute([$operation['montant'], $tontine_id]);
-                if ($stmtCaisse->rowCount() !== 1) {
-                    throw new RuntimeException('La caisse de réserve de la tontine est introuvable.');
-                }
 
                 $pdo->commit();
                 message_flash('success', 'L’opération a été réglée et ajoutée à la caisse de réserve.');
@@ -128,12 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$stmtTontine = $pdo->prepare("
-    SELECT solde_caisse_reserve
-    FROM tontines
-    WHERE id = ?
-    LIMIT 1
-");
+$stmtTontine = $pdo->prepare("SELECT solde_caisse_reserve FROM tontines WHERE id = ? LIMIT 1");
 $stmtTontine->execute([$tontine_id]);
 $tontine = $stmtTontine->fetch();
 
@@ -177,19 +221,23 @@ $stmtOperations = $pdo->prepare("
 $stmtOperations->execute([$tontine_id]);
 $operations = $stmtOperations->fetchAll();
 
+$pct_actuel = ($cycle_actif && (float)$cycle_actif['montant_cotisation'] > 0)
+    ? round(((float)$cycle_actif['montant_penalite_retard'] / (float)$cycle_actif['montant_cotisation']) * 100, 1)
+    : 0.0;
+
 $libelles_type = [
     'penalite' => 'Pénalité',
-    'bonus' => 'Bonus',
+    'bonus'    => 'Bonus',
 ];
 $classes_statut = [
     'en_attente' => 'text-bg-warning',
-    'regle' => 'text-bg-success',
-    'annule' => 'text-bg-secondary',
+    'regle'      => 'text-bg-success',
+    'annule'     => 'text-bg-secondary',
 ];
 $libelles_statut = [
     'en_attente' => 'En attente',
-    'regle' => 'Réglée',
-    'annule' => 'Annulée',
+    'regle'      => 'Réglée',
+    'annule'     => 'Annulée',
 ];
 
 $titre_page = 'Caisse & Pénalités';
@@ -200,22 +248,14 @@ require_once __DIR__ . '/../includes/navbar.php';
 <div class="page-header-dark">
     <div class="container">
         <span class="badge bg-primary bg-opacity-25 text-primary px-3 py-2 rounded-pill fw-semibold mb-2">
-            <i class="bi bi-piggy-bank me-1"></i>CAISSE DE RÉSERVE
+            <i class="bi bi-piggy-bank me-1"></i>CAISSE DE RÉSERVE & TAUX DE PÉNALITÉ
         </span>
         <h1 class="fw-bold h2 mb-1">Caisse & Pénalités</h1>
-        <p class="text-muted small mb-0">Suivez les pénalités et bonus, puis enregistrez leur règlement dans la caisse de réserve.</p>
+        <p class="text-muted small mb-0">Ajustez le pourcentage de pénalité du cycle actif et gérez les entrées de la caisse de réserve.</p>
     </div>
 </div>
 
 <main class="container pb-5">
-    <?php if (!empty($_SESSION['flash_texte'])): ?>
-        <div class="alert alert-<?= e($_SESSION['flash_type'] ?? 'info') ?> alert-dismissible fade show mt-4" role="alert">
-            <?= e($_SESSION['flash_texte']) ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
-        </div>
-        <?php unset($_SESSION['flash_type'], $_SESSION['flash_texte']); ?>
-    <?php endif; ?>
-
     <div class="row g-3 mt-1 mb-4">
         <div class="col-sm-6 col-lg-3">
             <div class="card card-djangui h-100 p-4 border-left-primary">
@@ -243,11 +283,50 @@ require_once __DIR__ . '/../includes/navbar.php';
         </div>
     </div>
 
+    <!-- POINT 2 : RÉGLAGE UNIQUE ET CENTRALISÉ DU POURCENTAGE DE PÉNALITÉ DE RETARD -->
+    <?php if ($cycle_actif): ?>
+        <div class="card card-djangui p-4 mb-4 border-left-warning">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+                <div>
+                    <h2 class="h5 fw-bold mb-1">
+                        <i class="bi bi-percent text-warning me-2"></i>Taux de pénalité de retard — <?= e($cycle_actif['titre']) ?>
+                    </h2>
+                    <p class="text-muted small mb-0">
+                        Défini en pourcentage de la cotisation par séance (<strong><?= format_fcfa($cycle_actif['montant_cotisation']) ?></strong>). Toute pénalité payée alimente la Caisse de réserve.
+                    </p>
+                </div>
+                <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+                    Taux actif : <?= $pct_actuel ?> % (<?= format_fcfa($cycle_actif['montant_penalite_retard']) ?>)
+                </span>
+            </div>
+
+            <form method="POST" action="penalties.php" class="row g-3 align-items-center">
+                <?= champ_csrf() ?>
+                <input type="hidden" name="action" value="modifier_taux_penalite">
+                <div class="col-auto">
+                    <label for="pourcentage_penalite" class="col-form-label fw-semibold small">Modifier le pourcentage :</label>
+                </div>
+                <div class="col-auto">
+                    <div class="input-group">
+                        <input type="number" name="pourcentage_penalite" id="pourcentage_penalite" class="form-control fw-bold"
+                               min="0" max="100" step="0.5" value="<?= $pct_actuel ?>" style="max-width: 110px;" required>
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-glow-blue">
+                        <i class="bi bi-check2-circle me-1"></i>Appliquer le nouveau taux
+                    </button>
+                </div>
+            </form>
+        </div>
+    <?php endif; ?>
+
     <div class="row g-4">
         <section class="col-lg-4" aria-labelledby="nouvelle-operation-title">
             <div class="card card-djangui p-4">
                 <h2 id="nouvelle-operation-title" class="h5 fw-bold mb-3">
-                    <i class="bi bi-plus-circle text-primary me-2"></i>Nouvelle opération
+                    <i class="bi bi-plus-circle text-primary me-2"></i>Opération exceptionnelle
                 </h2>
                 <?php if (empty($membres_cycle)): ?>
                     <p class="text-muted mb-0">Aucun membre n’est encore inscrit à un cycle. Créez un cycle avant d’ajouter une opération.</p>
@@ -271,14 +350,14 @@ require_once __DIR__ . '/../includes/navbar.php';
                         <div class="mb-3">
                             <label for="type_operation" class="form-label fw-semibold">Type d’opération</label>
                             <select class="form-select" id="type_operation" name="type_operation" required>
-                                <option value="penalite">Pénalité</option>
                                 <option value="bonus">Bonus / versement volontaire</option>
+                                <option value="penalite">Pénalité manuelle (discipline / absence)</option>
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label for="montant" class="form-label fw-semibold">Montant (FCFA)</label>
-                            <input type="number" class="form-control" id="montant" name="montant" min="0.01" step="0.01" required>
+                            <input type="number" class="form-control" id="montant" name="montant" min="100" step="100" required>
                         </div>
 
                         <div class="mb-3">
@@ -286,7 +365,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                             <textarea class="form-control" id="motif" name="motif" rows="3" maxlength="255" required></textarea>
                         </div>
 
-                        <p class="form-text">L’opération sera créée en attente. La caisse ne sera créditée qu’au moment du règlement.</p>
+                        <p class="form-text">L’opération sera créée en attente. La caisse sera créditée dès son règlement (ou déduite sur le pot du membre).</p>
                         <button type="submit" class="btn btn-glow-blue w-100">
                             <i class="bi bi-check2-circle me-1"></i>Enregistrer l’opération
                         </button>

@@ -99,8 +99,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             message_flash('info', 'Cette tontine est déjà fermée.');
         } else {
             $confirmation = trim($_POST['confirmation_fermeture'] ?? '');
+            $stmtCycActif = $pdo->prepare("SELECT id FROM cycles WHERE tontine_id = ? AND statut = 'actif' LIMIT 1");
+            $stmtCycActif->execute([$tontine_id]);
             if ($confirmation !== 'FERMER') {
                 message_flash('danger', 'Saisissez FERMER pour confirmer l’arrêt définitif de la tontine.');
+            } elseif ($stmtCycActif->fetchColumn()) {
+                message_flash('warning', 'Impossible de fermer la tontine tant qu’un cycle est encore en cours (actif). Clôturez d’abord le cycle actif.');
             } else {
                 $stmtFermer = $pdo->prepare("
                     UPDATE tontines

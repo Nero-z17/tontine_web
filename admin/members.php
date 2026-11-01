@@ -156,6 +156,12 @@ $membres_acceptes = array_filter($tous_les_utilisateurs, static function ($u) {
 $nb_actifs = count(array_filter($membres_acceptes, static function ($u) {
     return $u['statut_membre'] === 'actif';
 }));
+$nb_inactifs = count(array_filter($membres_acceptes, static function ($u) {
+    return $u['statut_membre'] === 'inactif';
+}));
+$nb_sortis = count(array_filter($membres_acceptes, static function ($u) {
+    return $u['statut_membre'] === 'sorti';
+}));
 
 $lien_invitation = BASE_URL . '/join-tontine.php?code=' . urlencode($tontine['code_invitation']);
 
@@ -184,6 +190,14 @@ require_once __DIR__ . '/../includes/navbar.php';
                 <span class="badge bg-success px-3 py-2 rounded-pill fs-6">
                     <i class="bi bi-check-circle-fill me-1"></i><?= $nb_actifs ?> actif<?= $nb_actifs > 1 ? 's' : '' ?>
                 </span>
+                <span class="badge bg-secondary px-3 py-2 rounded-pill fs-6">
+                    <i class="bi bi-pause-circle-fill me-1"></i><?= $nb_inactifs ?> inactif<?= $nb_inactifs > 1 ? 's' : '' ?>
+                </span>
+                <?php if ($nb_sortis > 0): ?>
+                    <span class="badge bg-danger px-3 py-2 rounded-pill fs-6">
+                        <i class="bi bi-box-arrow-right me-1"></i><?= $nb_sortis ?> sorti<?= $nb_sortis > 1 ? 's' : '' ?>
+                    </span>
+                <?php endif; ?>
             </div>
         </div>
     </div>

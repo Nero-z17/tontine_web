@@ -123,7 +123,6 @@ $est_admin = ($est_connecte && ($_SESSION['role'] ?? '') === 'admin');
                         <ul class="dropdown-menu shadow border-0">
                             <li><a class="dropdown-item" href="<?= BASE_URL ?>/member/tontine.php">Infos de la tontine</a></li>
                             <li><a class="dropdown-item" href="<?= BASE_URL ?>/member/calendar.php">Calendrier des échéances</a></li>
-                            <li><a class="dropdown-item" href="<?= BASE_URL ?>/member/card.php">Ma Carte QR Code</a></li>
                             <li><a class="dropdown-item" href="<?= BASE_URL ?>/member/notifications.php">Notifications</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="<?= BASE_URL ?>/member/profile.php">Mon Profil & MoMo</a></li>
@@ -194,8 +193,8 @@ $est_admin = ($est_connecte && ($_SESSION['role'] ?? '') === 'admin');
         <a href="<?= BASE_URL ?>/member/draw-rank.php" class="<?= $page_courante === 'draw-rank.php' ? 'active' : '' ?>">
             <i class="bi bi-trophy"></i><span>Mon Rang</span>
         </a>
-        <a href="<?= BASE_URL ?>/member/card.php" class="<?= $page_courante === 'card.php' ? 'active' : '' ?>">
-            <i class="bi bi-qr-code"></i><span>Carte QR</span>
+        <a href="<?= BASE_URL ?>/member/calendar.php" class="<?= $page_courante === 'calendar.php' ? 'active' : '' ?>">
+            <i class="bi bi-calendar3"></i><span>Calendrier</span>
         </a>
         <a href="<?= BASE_URL ?>/member/notifications.php" class="<?= $page_courante === 'notifications.php' ? 'active' : '' ?>">
             <i class="bi bi-bell"></i><span>Alertes</span>

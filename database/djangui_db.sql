@@ -24,7 +24,7 @@ CREATE TABLE users (
     numero_cni VARCHAR(60) DEFAULT NULL COMMENT 'Donnee sensible visible uniquement par l admin',
     role ENUM('admin', 'member') NOT NULL DEFAULT 'member',
     statut_membre ENUM('actif', 'inactif', 'sorti') NOT NULL DEFAULT 'actif',
-    statut_validation ENUM('en_attente', 'accepte') NOT NULL DEFAULT 'accepte',
+    statut_validation ENUM('en_attente', 'accepte', 'refuse') NOT NULL DEFAULT 'accepte',
     canal_paiement ENUM('momo', 'om', 'especes') NOT NULL DEFAULT 'momo',
     telephone_paiement VARCHAR(20) NOT NULL COMMENT 'Numero MoMo/OM qui envoie les cotisations et recoit le pot',
     tentatives_echouees TINYINT UNSIGNED NOT NULL DEFAULT 0,
@@ -87,7 +87,6 @@ CREATE TABLE cycles (
     titre VARCHAR(100) NOT NULL,
     montant_cotisation DECIMAL(12,2) NOT NULL,
     frequence ENUM('hebdo', 'bimensuel', 'mensuel') NOT NULL DEFAULT 'mensuel',
-    jour_limite_paiement TINYINT UNSIGNED NOT NULL DEFAULT 5,
     montant_penalite_retard DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     date_debut DATE NOT NULL,
     date_fin DATE DEFAULT NULL,
@@ -273,15 +272,15 @@ INSERT INTO users (id, code_public, username, password_hash, nom_complet, teleph
 (5, 'DJG-2026-MBR05', 'mbarga_paul', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Paul Mbarga', '+237655667788', 'paul.mbarga@djangui.cm', 'CNI-CE-112233445', 'member', 'actif', 'momo', '+237655667788');
 
 -- 2. Tontine : Caisse de réserve à 7 500 FCFA (5 000 bonus + 2 500 pénalité réglée par Paul)
-INSERT INTO tontines (id, code_tontine, code_invitation, nom, description, ville, devise, solde_caisse_reserve, statut, date_debut_essai, date_fin_essai, statut_abonnement, abonnement_valide_jusqua, admin_id) VALUES
-(1, 'TON-DLA-2026', 'INV-AKWA-2026', 'Djangui Solidarité Akwa', 'Tontine mensuelle à 50 000 FCFA. La secrétaire gère la caisse de réserve alimentée par les pénalités et bonus.', 'Douala', 'FCFA', 7500.00, 'active', '2026-07-01 08:00:00', '2026-09-01 08:00:00', 'actif', '2026-11-01 23:59:59', 1);
+INSERT INTO tontines (id, code_tontine, code_invitation, nom, description, ville, devise, solde_caisse_reserve, statut, date_debut_essai, date_fin_essai, statut_abonnement, abonnement_valide_jusqua, admin_id, created_at) VALUES
+(1, 'TON-DLA-2026', 'INV-AKWA-2026', 'Djangui Solidarité Akwa', 'Tontine mensuelle à 50 000 FCFA. La secrétaire gère la caisse de réserve alimentée par les pénalités et bonus.', 'Douala', 'FCFA', 7500.00, 'active', '2026-07-01 08:00:00', '2026-09-01 08:00:00', 'actif', '2026-11-01 23:59:59', 1, '2026-07-01 08:00:00');
 
 UPDATE users SET tontine_id = 1 WHERE id IN (1, 2, 3, 4, 5);
 
 -- 3. Cycles : Cycle 1 (terminé) et Cycle 2 (actif)
-INSERT INTO cycles (id, tontine_id, numero_cycle, titre, montant_cotisation, frequence, jour_limite_paiement, montant_penalite_retard, date_debut, date_fin, statut, date_tirage, tirage_verrouille, auteur_tirage_id) VALUES
-(1, 1, 1, 'Cycle 1 - Printemps 2026 (Terminé)', 50000.00, 'mensuel', 5, 2500.00, '2026-04-01', '2026-08-31', 'termine', '2026-04-01 10:00:00', 1, 1),
-(2, 1, 2, 'Cycle 2 - Automne 2026 (Actif)', 50000.00, 'mensuel', 5, 2500.00, '2026-09-01', '2027-01-31', 'actif', '2026-09-01 18:30:00', 1, 1);
+INSERT INTO cycles (id, tontine_id, numero_cycle, titre, montant_cotisation, frequence, montant_penalite_retard, date_debut, date_fin, statut, date_tirage, tirage_verrouille, auteur_tirage_id) VALUES
+(1, 1, 1, 'Cycle 1 - Printemps 2026 (Terminé)', 50000.00, 'mensuel', 2500.00, '2026-04-01', '2026-08-31', 'termine', '2026-04-01 10:00:00', 1, 1),
+(2, 1, 2, 'Cycle 2 - Automne 2026 (Actif)', 50000.00, 'mensuel', 2500.00, '2026-09-01', '2027-01-31', 'actif', '2026-09-01 18:30:00', 1, 1);
 
 -- 4. Participants au Cycle 2 (5 membres x 50 000 = Pot attendu de 250 000 FCFA par tour)
 -- Rang 1 : Éric Fotso (Bouffeur Séance 1) | Rang 2 : Marie-Claire Ngono, la Secrétaire (Bouffeur Séance 2)
