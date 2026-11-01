@@ -149,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // ── Ventilation financière sur le RESTE À PAYER (gère les paiements partiels) ──
     $montant_cotisation = max(0.0, (float)$cotisation['montant_attendu'] - (float)$cotisation['montant_paye']);
     $date_echeance      = $cotisation['date_echeance'];
-    $aujourdhui         = date('Y-m-d');
+    $aujourdhui         = date_actuelle('Y-m-d');
     $est_en_retard      = (strtotime($date_echeance) < strtotime($aujourdhui)) || ($cotisation['statut'] === 'en_retard');
 
     if ($est_en_retard) {
@@ -276,12 +276,10 @@ if ($cycle && $mon_cycle_member) {
             c.id AS contribution_id, c.numero_seance, c.date_echeance,
             c.montant_attendu, c.montant_paye, c.statut AS statut_contrib,
             u_ben.nom_complet AS ben_nom,
-            p.id AS payment_id, p.montant_total, p.part_beneficiaire,
-            p.part_caisse_reserve, p.mode_paiement, p.date_paiement
+            (SELECT p.mode_paiement FROM payments p WHERE p.contribution_id = c.id AND p.statut_paiement = 'valide' ORDER BY p.id DESC LIMIT 1) AS mode_paiement
         FROM contributions c
         JOIN cycle_members cm_bouffeur ON cm_bouffeur.id = c.beneficiaire_cycle_member_id
         JOIN users u_ben ON u_ben.id = cm_bouffeur.user_id
-        LEFT JOIN payments p ON p.contribution_id = c.id AND p.statut_paiement = 'valide'
         WHERE c.cycle_member_id = ?
         ORDER BY c.numero_seance ASC
     ");
@@ -410,7 +408,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                     </thead>
                     <tbody>
                         <?php 
-                        $aujourdhui = date('Y-m-d');
+                        $aujourdhui = date_actuelle('Y-m-d');
                         foreach ($seances as $s): 
                             $deja_paye   = ($s['statut_contrib'] === 'paye' || (float)$s['montant_paye'] >= (float)$s['montant_attendu']);
                             $date_ech    = strtotime($s['date_echeance']);

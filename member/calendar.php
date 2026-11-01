@@ -74,7 +74,7 @@ if ($cycle_courant) {
         FROM contributions c
         LEFT JOIN cycle_members cm_ben ON c.beneficiaire_cycle_member_id = cm_ben.id
         LEFT JOIN users u_ben ON cm_ben.user_id = u_ben.id
-        WHERE c.cycle_id = ?
+        WHERE cm_ben.cycle_id = ?
         GROUP BY 
             c.numero_seance,
             c.date_echeance,
@@ -96,10 +96,10 @@ if ($cycle_courant) {
         $stmtMesCotis = $pdo->prepare("
             SELECT id, numero_seance, date_echeance, montant_attendu, montant_paye, statut
             FROM contributions
-            WHERE cycle_id = ? AND cycle_member_id = ?
+            WHERE cycle_member_id = ?
             ORDER BY numero_seance ASC
         ");
-        $stmtMesCotis->execute([$cycle_id, (int)$ma_participation['id']]);
+        $stmtMesCotis->execute([(int)$ma_participation['id']]);
         foreach ($stmtMesCotis->fetchAll() as $ligne) {
             $num = (int)$ligne['numero_seance'];
             $mes_cotisations_par_seance[$num] = $ligne;
@@ -327,7 +327,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     $pourcentage    = $attendu_seance > 0 ? min(100, round(($paye_seance / $attendu_seance) * 100)) : 0;
 
                                     $date_ts = strtotime($seance['date_echeance']);
-                                    $est_passee = ($date_ts < strtotime('today'));
+                                    $est_passee = ($date_ts < strtotime(date_actuelle('Y-m-d')));
                                 ?>
                                 <tr class="<?= $est_mon_tour ? 'table-primary bg-opacity-10' : '' ?>">
                                     <td>

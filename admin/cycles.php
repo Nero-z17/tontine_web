@@ -16,7 +16,7 @@ $tontine = $stmtTontine->fetch();
 $abonnement_valide = true;
 if ($tontine) {
     $fin_essai = !empty($tontine['date_fin_essai']) ? strtotime($tontine['date_fin_essai']) : 0;
-    if ($tontine['statut_abonnement'] === 'expire' || ($tontine['statut_abonnement'] === 'essai' && $fin_essai < time())) {
+    if ($tontine['statut_abonnement'] === 'expire' || ($tontine['statut_abonnement'] === 'essai' && $fin_essai < temps_actuel())) {
         $abonnement_valide = false;
     }
 }
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $frequence          = $_POST['frequence'] ?? 'mensuel';
         $jour_echeance      = (int)($_POST['jour_echeance'] ?? 5);
         $penalite_retard    = (float)($_POST['penalite_retard'] ?? 0);
-        $date_debut         = $_POST['date_debut'] ?? date('Y-m-d');
+        $date_debut = $_POST['date_debut'] ?? date_actuelle('Y-m-d');
         $participants       = $_POST['participants'] ?? [];
 
         if ($montant_cotisation <= 0) {
@@ -257,7 +257,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold small">Date de début du cycle *</label>
-                            <input type="date" name="date_debut" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                            <input type="date" name="date_debut" class="form-control" value="<?= date_actuelle('Y-m-d') ?>" required>
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold small">Jour limite (ex: le 5 du mois)</label>
