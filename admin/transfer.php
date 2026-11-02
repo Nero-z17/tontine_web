@@ -1,15 +1,14 @@
 <?php
-// admin/transfer.php — Passation du rôle d'administrateur de la tontine
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/functions.php';
+// admin/transfer.php — Passation du rôle d\x27administrateur de la tontine (Sans cycle_id)
+require_once __DIR__ . "/../includes/db.php";
+require_once __DIR__ . "/../includes/functions.php";
 
-// Réserve cette page aux administrateurs et récupère l'identité de la tontine courante.
 verifier_admin();
 
-$tontine_id = (int)($_SESSION['tontine_id'] ?? 0);
-$user_id = (int)$_SESSION['user_id'];
+$tontine_id = (int)($_SESSION["tontine_id"] ?? 0);
+$user_id    = (int)$_SESSION["user_id"];
 
-// Vérifie que l'utilisateur connecté est toujours l'administrateur enregistré de la tontine.
+// Vérifie que l\x27utilisateur connecté est toujours l\x27administrateur enregistré de la tontine.
 $stmtTontine = $pdo->prepare("
     SELECT t.id, t.nom, t.admin_id, u.nom_complet AS nom_admin
     FROM tontines t
@@ -20,46 +19,38 @@ $stmtTontine = $pdo->prepare("
 $stmtTontine->execute([$tontine_id]);
 $tontine = $stmtTontine->fetch();
 
-if (!$tontine || (int)$tontine['admin_id'] !== $user_id) {
-    message_flash('warning', 'Votre compte n’est plus l’administrateur actuel de cette tontine.');
-    header('Location: ' . BASE_URL . '/member/dashboard.php');
+if (!$tontine || (int)$tontine["admin_id"] !== $user_id) {
+    message_flash("warning", "Votre compte n’est plus l’administrateur actuel de cette tontine.");
+    header("Location: " . BASE_URL . "/member/dashboard.php");
     exit;
 }
 
-// Le formulaire de passation est traité uniquement après validation du jeton CSRF.
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
     verifier_csrf();
 
-    if (($_POST['action'] ?? '') !== 'transferer_administration') {
-        message_flash('danger', 'Action non reconnue.');
-        header('Location: ' . BASE_URL . '/admin/transfer.php');
+    if (($_POST["action"] ?? "") !== "transferer_administration") {
+        message_flash("danger", "Action non reconnue.");
+        header("Location: " . BASE_URL . "/admin/transfer.php");
         exit;
     }
 
-    // Nettoie et valide les valeurs reçues avant toute modification en base.
-    $nouvel_admin_id = filter_var($_POST['nouvel_admin_id'] ?? null, FILTER_VALIDATE_INT);
-    $cycle_id_saisi = trim((string)($_POST['cycle_id'] ?? ''));
-    $cycle_id = $cycle_id_saisi === '' ? null : filter_var($cycle_id_saisi, FILTER_VALIDATE_INT);
-    $ancien_reste_membre_saisi = $_POST['ancien_reste_membre'] ?? '';
-    $motif = trim((string)($_POST['motif'] ?? ''));
-    $motif_trop_long = function_exists('mb_strlen')
-        ? mb_strlen($motif, 'UTF-8') > 255
+    $nouvel_admin_id          = filter_var($_POST["nouvel_admin_id"] ?? null, FILTER_VALIDATE_INT);
+    $ancien_reste_membre_saisi = $_POST["ancien_reste_membre"] ?? "";
+    $motif                    = trim((string)($_POST["motif"] ?? ""));
+    $motif_trop_long          = function_exists("mb_strlen")
+        ? mb_strlen($motif, "UTF-8") > 255
         : strlen($motif) > 255;
 
     if (!$nouvel_admin_id || $nouvel_admin_id === $user_id) {
-        message_flash('danger', 'Veuillez sélectionner un autre membre actif de votre tontine.');
-    } elseif ($cycle_id_saisi !== '' && (!$cycle_id || $cycle_id < 1)) {
-        message_flash('danger', 'Le cycle sélectionné est invalide.');
-    } elseif (!in_array($ancien_reste_membre_saisi, ['0', '1'], true)) {
-        message_flash('danger', 'Veuillez préciser si l’administrateur sortant reste membre.');
+        message_flash("danger", "Veuillez sélectionner un autre membre actif de votre tontine.");
+    } elseif (!in_array($ancien_reste_membre_saisi, ["0", "1"], true)) {
+        message_flash("danger", "Veuillez préciser si l’administrateur sortant reste membre.");
     } elseif ($motif_trop_long) {
-        message_flash('danger', 'Le motif ne doit pas dépasser 255 caractères.');
+        message_flash("danger", "Le motif ne doit pas dépasser 255 caractères.");
     } else {
         try {
-            // Regroupe toutes les modifications afin qu'elles soient annulées ensemble en cas d'erreur.
             $pdo->beginTransaction();
 
-            // Verrouille la tontine et confirme que l'administrateur n'a pas changé entre-temps.
             $stmtVerrouTontine = $pdo->prepare("
                 SELECT admin_id
                 FROM tontines
@@ -71,10 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $admin_actuel_id = $stmtVerrouTontine->fetchColumn();
 
             if (!$admin_actuel_id || (int)$admin_actuel_id !== $user_id) {
-                throw new RuntimeException('La responsabilité de cette tontine a déjà changé.');
+                throw new RuntimeException("La responsabilité de cette tontine a déjà changé.");
             }
 
-            // Le futur administrateur doit être un membre actif de cette même tontine.
             $stmtNouveauAdmin = $pdo->prepare("
                 SELECT id, role, statut_membre
                 FROM users
@@ -87,55 +77,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (
                 !$nouveau_admin
-                || $nouveau_admin['role'] !== 'member'
-                || $nouveau_admin['statut_membre'] !== 'actif'
+                || $nouveau_admin["role"] !== "member"
+                || $nouveau_admin["statut_membre"] !== "actif"
             ) {
-                throw new RuntimeException('Le membre choisi n’est plus éligible à cette passation.');
+                throw new RuntimeException("Le membre choisi n’est plus éligible à cette passation.");
             }
 
-            // Le cycle est facultatif, mais s'il est fourni il doit encore être actif au moment de la validation.
-            if ($cycle_id !== null) {
-                $stmtCycle = $pdo->prepare("
-                    SELECT id, statut
-                    FROM cycles
-                    WHERE id = ? AND tontine_id = ?
-                    LIMIT 1
-                    FOR UPDATE
-                ");
-                $stmtCycle->execute([$cycle_id, $tontine_id]);
-                $cycle = $stmtCycle->fetch();
-                if (!$cycle || $cycle['statut'] !== 'actif') {
-                    throw new RuntimeException('Le cycle sélectionné n’est plus actif. La passation ne peut être associée qu’au cycle en cours.');
-                }
-            }
-
-            // Rétrograde l'ancien administrateur et conserve son statut de membre selon le choix du formulaire.
+            // Rétrograde l\x27ancien administrateur
             $stmtAncienAdmin = $pdo->prepare("
                 UPDATE users
-                SET role = 'member', statut_membre = ?
-                WHERE id = ? AND tontine_id = ? AND role = 'admin'
+                SET role = \x27member\x27, statut_membre = ?
+                WHERE id = ? AND tontine_id = ? AND role = \x27admin\x27
             ");
             $stmtAncienAdmin->execute([
-                $ancien_reste_membre_saisi === '1' ? 'actif' : 'sorti',
+                $ancien_reste_membre_saisi === "1" ? "actif" : "sorti",
                 $user_id,
                 $tontine_id,
             ]);
             if ($stmtAncienAdmin->rowCount() !== 1) {
-                throw new RuntimeException('Le compte de l’administrateur sortant a changé.');
+                throw new RuntimeException("Le compte de l’administrateur sortant a changé.");
             }
 
-            // Donne le rôle d'administrateur au membre sélectionné.
+            // Donne le rôle d\x27administrateur au membre sélectionné
             $stmtPromouvoir = $pdo->prepare("
                 UPDATE users
-                SET role = 'admin', statut_membre = 'actif'
-                WHERE id = ? AND tontine_id = ? AND role = 'member' AND statut_membre = 'actif'
+                SET role = \x27admin\x27, statut_membre = \x27actif\x27
+                WHERE id = ? AND tontine_id = ? AND role = \x27member\x27 AND statut_membre = \x27actif\x27
             ");
             $stmtPromouvoir->execute([$nouvel_admin_id, $tontine_id]);
             if ($stmtPromouvoir->rowCount() !== 1) {
-                throw new RuntimeException('Le membre choisi a changé avant la passation.');
+                throw new RuntimeException("Le membre choisi a changé avant la passation.");
             }
 
-            // Met à jour l'administrateur officiel de la tontine.
+            // Met à jour l\x27administrateur officiel de la tontine
             $stmtChangerAdmin = $pdo->prepare("
                 UPDATE tontines
                 SET admin_id = ?
@@ -143,104 +117,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $stmtChangerAdmin->execute([$nouvel_admin_id, $tontine_id, $user_id]);
             if ($stmtChangerAdmin->rowCount() !== 1) {
-                throw new RuntimeException('La responsabilité de la tontine a déjà changé.');
+                throw new RuntimeException("La responsabilité de la tontine a déjà changé.");
             }
 
-            // Conserve la date de validation et les détails de cette passation dans l'historique.
+            // Enregistre la passation dans admin_transfers (sans cycle_id)
             $stmtHistorique = $pdo->prepare("
                 INSERT INTO admin_transfers (
-                    tontine_id, cycle_id, ancien_admin_id, nouvel_admin_id,
+                    tontine_id, ancien_admin_id, nouvel_admin_id,
                     ancien_reste_membre, motif
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?)
             ");
             $stmtHistorique->execute([
                 $tontine_id,
-                $cycle_id,
                 $user_id,
                 $nouvel_admin_id,
                 (int)$ancien_reste_membre_saisi,
-                $motif !== '' ? $motif : null,
+                $motif !== "" ? $motif : null,
             ]);
 
             $pdo->commit();
 
-            // Après la validation, l'ancien administrateur quitte l'espace admin.
-            // S'il quitte aussi la tontine, sa session est supprimée; sinon son rôle de session devient membre.
-            if ($ancien_reste_membre_saisi === '0') {
+            if ($ancien_reste_membre_saisi === "0") {
                 $_SESSION = [];
                 session_destroy();
                 session_start();
                 session_regenerate_id(true);
-                message_flash('success', 'La passation d’administration a été enregistrée.');
-                header('Location: ' . BASE_URL . '/login.php');
+                message_flash("success", "La passation d’administration a été enregistrée.");
+                header("Location: " . BASE_URL . "/login.php");
             } else {
-                $_SESSION['role'] = 'member';
-                message_flash('success', 'La passation d’administration a été enregistrée.');
-                header('Location: ' . BASE_URL . '/member/dashboard.php');
+                $_SESSION["role"] = "member";
+                message_flash("success", "La passation d’administration a été enregistrée.");
+                header("Location: " . BASE_URL . "/member/dashboard.php");
             }
             exit;
         } catch (PDOException | RuntimeException $e) {
-            // Une erreur avant la fin annule les changements pour éviter une passation incomplète.
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             message_flash(
-                'danger',
+                "danger",
                 $e instanceof RuntimeException
                     ? $e->getMessage()
-                    : 'Impossible d’enregistrer la passation. Veuillez réessayer.'
+                    : "Impossible d’enregistrer la passation. Veuillez réessayer."
             );
-            header('Location: ' . BASE_URL . '/admin/transfer.php');
+            header("Location: " . BASE_URL . "/admin/transfer.php");
             exit;
         }
     }
 
-    header('Location: ' . BASE_URL . '/admin/transfer.php');
+    header("Location: " . BASE_URL . "/admin/transfer.php");
     exit;
 }
 
-// Charge les membres actifs pouvant recevoir l'administration.
+// Charge les membres actifs pouvant recevoir l\x27administration
 $stmtMembres = $pdo->prepare("
     SELECT id, nom_complet, code_public
     FROM users
-    WHERE tontine_id = ? AND role = 'member' AND statut_membre = 'actif'
+    WHERE tontine_id = ? AND role = \x27member\x27 AND statut_membre = \x27actif\x27 AND statut_validation = \x27accepte\x27
     ORDER BY nom_complet
 ");
 $stmtMembres->execute([$tontine_id]);
 $membres = $stmtMembres->fetchAll();
 
-// Seuls les cycles actifs sont proposés; le cycle reste facultatif.
-$stmtCycles = $pdo->prepare("
-    SELECT id, numero_cycle, titre, statut
-    FROM cycles
-    WHERE tontine_id = ? AND statut = 'actif'
-    ORDER BY numero_cycle DESC
-");
-$stmtCycles->execute([$tontine_id]);
-$cycles = $stmtCycles->fetchAll();
-
-// Récupère l'historique de la tontine, du transfert le plus récent au plus ancien.
+// Récupère l\x27historique des passations de la tontine
 $stmtHistorique = $pdo->prepare("
     SELECT tr.date_transfert, tr.ancien_reste_membre, tr.motif,
            ua.nom_complet AS ancien_admin,
-           un.nom_complet AS nouvel_admin,
-           c.numero_cycle, c.titre AS titre_cycle
+           un.nom_complet AS nouvel_admin
     FROM admin_transfers tr
     JOIN users ua ON ua.id = tr.ancien_admin_id
     JOIN users un ON un.id = tr.nouvel_admin_id
-    LEFT JOIN cycles c ON c.id = tr.cycle_id
     WHERE tr.tontine_id = ?
     ORDER BY tr.date_transfert DESC, tr.id DESC
 ");
 $stmtHistorique->execute([$tontine_id]);
 $transferts = $stmtHistorique->fetchAll();
 
-$titre_page = 'Passation d’administration';
-require_once __DIR__ . '/../includes/header.php';
-require_once __DIR__ . '/../includes/navbar.php';
+$titre_page = "Passation d’administration";
+require_once __DIR__ . "/../includes/header.php";
+require_once __DIR__ . "/../includes/navbar.php";
 ?>
 
-<!-- Présentation de la page et du formulaire de passation -->
 <div class="page-header-dark">
     <div class="container">
         <span class="badge bg-primary bg-opacity-25 text-primary px-3 py-2 rounded-pill fw-semibold mb-2">
@@ -248,20 +205,12 @@ require_once __DIR__ . '/../includes/navbar.php';
         </span>
         <h1 class="fw-bold h2 mb-1">Passation d’administration</h1>
         <p class="text-muted small mb-0">
-            Transférez la gestion de <?= e($tontine['nom']) ?> à un membre actif et consultez les passations précédentes.
+            Transférez la gestion de <?= e($tontine["nom"]) ?> à un membre actif et consultez les passations précédentes.
         </p>
     </div>
 </div>
 
 <main class="container pb-5">
-    <?php if (!empty($_SESSION['flash_texte'])): ?>
-        <div class="alert alert-<?= e($_SESSION['flash_type'] ?? 'info') ?> alert-dismissible fade show mt-4" role="alert">
-            <?= e($_SESSION['flash_texte']) ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
-        </div>
-        <?php unset($_SESSION['flash_type'], $_SESSION['flash_texte']); ?>
-    <?php endif; ?>
-
     <div class="row g-4 mt-1">
         <section class="col-lg-5" aria-labelledby="transfert-title">
             <div class="card card-djangui p-4">
@@ -269,7 +218,7 @@ require_once __DIR__ . '/../includes/navbar.php';
                     <i class="bi bi-person-gear text-primary me-2"></i>Transférer la responsabilité
                 </h2>
                 <p class="small text-muted">
-                    Administrateur actuel : <strong><?= e($tontine['nom_admin']) ?></strong>.
+                    Administrateur actuel : <strong><?= e($tontine["nom_admin"]) ?></strong>.
                     La passation est immédiate et sera conservée dans l’historique.
                 </p>
 
@@ -287,20 +236,8 @@ require_once __DIR__ . '/../includes/navbar.php';
                             <select class="form-select" id="nouvel_admin_id" name="nouvel_admin_id" required>
                                 <option value="">Sélectionner un membre actif</option>
                                 <?php foreach ($membres as $membre): ?>
-                                    <option value="<?= (int)$membre['id'] ?>">
-                                        <?= e($membre['nom_complet']) ?> (<?= e($membre['code_public']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="cycle_id" class="form-label fw-semibold">Cycle en cours <span class="text-muted fw-normal">(facultatif)</span></label>
-                            <select class="form-select" id="cycle_id" name="cycle_id">
-                                <option value="">Ne pas associer à un cycle</option>
-                                <?php foreach ($cycles as $cycle): ?>
-                                    <option value="<?= (int)$cycle['id'] ?>">
-                                        Cycle #<?= (int)$cycle['numero_cycle'] ?> — <?= e($cycle['titre']) ?>
+                                    <option value="<?= (int)$membre["id"] ?>">
+                                        <?= e($membre["nom_complet"]) ?> (<?= e($membre["code_public"]) ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -337,7 +274,7 @@ require_once __DIR__ . '/../includes/navbar.php';
         <section class="col-lg-7" aria-labelledby="historique-title">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h2 id="historique-title" class="h5 fw-bold mb-0">Historique des passations</h2>
-                <span class="badge rounded-pill text-bg-light"><?= count($transferts) ?> passation<?= count($transferts) > 1 ? 's' : '' ?></span>
+                <span class="badge rounded-pill text-bg-light"><?= count($transferts) ?> passation<?= count($transferts) > 1 ? "s" : "" ?></span>
             </div>
 
             <?php if (empty($transferts)): ?>
@@ -352,7 +289,6 @@ require_once __DIR__ . '/../includes/navbar.php';
                             <thead>
                                 <tr>
                                     <th>Administrateurs</th>
-                                    <th>Cycle</th>
                                     <th>Date</th>
                                     <th>Après passation</th>
                                     <th>Motif</th>
@@ -363,23 +299,15 @@ require_once __DIR__ . '/../includes/navbar.php';
                                     <tr>
                                         <td>
                                             <div class="small text-muted">De</div>
-                                            <div class="fw-semibold"><?= e($transfert['ancien_admin']) ?></div>
+                                            <div class="fw-semibold"><?= e($transfert["ancien_admin"]) ?></div>
                                             <div class="small text-muted mt-1">À</div>
-                                            <div class="fw-semibold"><?= e($transfert['nouvel_admin']) ?></div>
+                                            <div class="fw-semibold"><?= e($transfert["nouvel_admin"]) ?></div>
                                         </td>
+                                        <td class="small text-nowrap"><?= e(date("d/m/Y H:i", strtotime($transfert["date_transfert"]))) ?></td>
                                         <td class="small">
-                                            <?php if ($transfert['numero_cycle'] !== null): ?>
-                                                Cycle #<?= (int)$transfert['numero_cycle'] ?><br>
-                                                <?= e($transfert['titre_cycle']) ?>
-                                            <?php else: ?>
-                                                <span class="text-muted">Non précisé</span>
-                                            <?php endif; ?>
+                                            <?= (int)$transfert["ancien_reste_membre"] === 1 ? "Reste membre" : "Quitte la tontine" ?>
                                         </td>
-                                        <td class="small text-nowrap"><?= e(date('d/m/Y H:i', strtotime($transfert['date_transfert']))) ?></td>
-                                        <td class="small">
-                                            <?= (int)$transfert['ancien_reste_membre'] === 1 ? 'Reste membre' : 'Quitte la tontine' ?>
-                                        </td>
-                                        <td class="small"><?= e($transfert['motif'] ?: '—') ?></td>
+                                        <td class="small"><?= e($transfert["motif"] ?: "—") ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -391,4 +319,4 @@ require_once __DIR__ . '/../includes/navbar.php';
     </div>
 </main>
 
-<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

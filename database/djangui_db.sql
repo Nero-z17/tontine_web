@@ -245,7 +245,6 @@ CREATE TABLE subscriptions (
 CREATE TABLE admin_transfers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tontine_id INT UNSIGNED NOT NULL,
-    cycle_id INT UNSIGNED DEFAULT NULL,
     ancien_admin_id INT UNSIGNED NOT NULL,
     nouvel_admin_id INT UNSIGNED NOT NULL,
     ancien_reste_membre TINYINT(1) NOT NULL DEFAULT 1,
@@ -253,7 +252,6 @@ CREATE TABLE admin_transfers (
     date_transfert DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_transfers_tontine FOREIGN KEY (tontine_id) REFERENCES tontines(id) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT fk_transfers_cycle FOREIGN KEY (cycle_id) REFERENCES cycles(id) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT fk_transfers_old_admin FOREIGN KEY (ancien_admin_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT fk_transfers_new_admin FOREIGN KEY (nouvel_admin_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     INDEX idx_transfers_tontine (tontine_id, date_transfert)
@@ -341,8 +339,8 @@ INSERT INTO subscriptions (id, tontine_id, type_periode, montant, date_debut, da
 (3, 1, 'mensuel', 2000.00, '2026-10-01 00:00:00', '2026-11-01 23:59:59', 'simule', 'SIM-SAAS-202610', 1);
 
 -- 10. Historique de transfert d'administrateur
-INSERT INTO admin_transfers (id, tontine_id, cycle_id, ancien_admin_id, nouvel_admin_id, ancien_reste_membre, motif, date_transfert) VALUES
-(1, 1, 1, 3, 1, 1, 'Passation de la gestion et de la caisse de réserve de Jean-Paul Kamga à Marie-Claire Ngono à la fin du Cycle 1.', '2026-08-31 18:00:00');
+INSERT INTO admin_transfers (id, tontine_id, ancien_admin_id, nouvel_admin_id, ancien_reste_membre, motif, date_transfert) VALUES
+(1, 1, 3, 1, 1, 'Passation de la gestion et de la caisse de réserve de Jean-Paul Kamga à Marie-Claire Ngono à la fin du Cycle 1.', '2026-08-31 18:00:00');
 
 ALTER TABLE users
 MODIFY COLUMN statut_validation ENUM('en_attente', 'accepte', 'refuse')
